@@ -6,25 +6,24 @@ import Crypto.Cipher.AES (AES128)
 import Crypto.Cipher.Types
 import Crypto.Data.Padding
 import Crypto.Error
-import qualified Data.Aeson as Aeson
 import Data.ByteString as BS
 import Data.Maybe
 import Data.Serialize.Get
 
 import Tuya.Types
 
-decode :: ByteString -> ByteString -> Either String Msg
+decode :: ByteString -> ByteString -> Either String (Msg ByteString)
 decode key bs = do
   Raw{..} <- decodeRaw bs
-  if prefix == 0x55aa && suffix == 0xaa55
+  if rawPrefix == 0x55aa && rawSuffix == 0xaa55
     then do
-      value <- Aeson.eitherDecodeStrict' (decryptPayload key payload)
+      let decrypted = decryptPayload key rawPayload
       pure
         Msg
-          { msgSequence = sequence'
-          , msgCommand = toEnum (fromIntegral command)
-          , msgReturnCode = returnCode
-          , msgPayload = value
+          { msgSequence = rawSequence
+          , msgCommand = toEnum (fromIntegral rawCommand)
+          , msgReturnCode = rawReturnCode
+          , msgPayload = decrypted
           }
     else Left "Prefix or Suffix was incorrect"
 
@@ -33,14 +32,14 @@ decodeRaw = runGet getRaw
 
 getRaw :: Get Raw
 getRaw = do
-  prefix <- getWord32be
-  sequence' <- getWord32be
-  command <- getWord32be
-  payloadSize <- getWord32be
-  returnCode <- getWord32be
-  payload <- getByteString (fromIntegral payloadSize - 12)
-  crc <- getWord32be
-  suffix <- getWord32be
+  rawPrefix <- getWord32be
+  rawSequence <- getWord32be
+  rawCommand <- getWord32be
+  rawPayloadSize <- getWord32be
+  rawReturnCode <- getWord32be
+  rawPayload <- getByteString (fromIntegral rawPayloadSize - 12)
+  rawCrc <- getWord32be
+  rawSuffix <- getWord32be
   return Raw{..}
 
 decryptPayload :: ByteString -> ByteString -> ByteString

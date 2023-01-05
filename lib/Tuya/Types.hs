@@ -1,36 +1,263 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Tuya.Types where
 
-import qualified Data.Aeson as Aeson
-import Data.ByteString
-
--- import qualified Data.HashMap.Strict as HM
-import Data.Word
+import Control.Applicative ((<|>))
+import Data.Aeson
+import Data.Aeson.Types (Parser)
+import Data.ByteString (ByteString)
+import Data.HashMap.Strict (HashMap)
+import Data.IORef (IORef)
+import Data.Map.Strict (Map)
+import Data.Text (Text)
+import Data.Word (Word32)
+import Network.Socket (SockAddr, Socket)
 
 data Raw = Raw
-  { prefix :: Word32
-  , sequence' :: Word32
-  , command :: Word32
-  , payloadSize :: Word32
-  , returnCode :: Word32
-  , payload :: ByteString
-  , crc :: Word32
-  , suffix :: Word32
+  { rawPrefix :: Word32
+  , rawSequence :: Word32
+  , rawCommand :: Word32
+  , rawPayloadSize :: Word32
+  , rawReturnCode :: Word32
+  , rawPayload :: ByteString
+  , rawCrc :: Word32
+  , rawSuffix :: Word32
   }
   deriving (Show)
 
-data Msg = Msg
+data Msg a = Msg
   { msgSequence :: Word32
   , msgCommand :: CommandType
   , msgReturnCode :: Word32
-  , msgPayload :: Aeson.Value
+  , msgPayload :: a
+  }
+  deriving (Show, Functor)
+
+data Gateway = Gateway
+  { gwIp :: Text
+  , gwGwId :: Text
+  , gwActive :: Int
+  , gwEncrypt :: Bool
+  , gwProductKey :: Text
+  , gwVersion :: Text
   }
   deriving (Show)
 
--- data Discovery = Discovery
---   { discovered :: HM.HashMap ByteString ()
---   }
+data Protocol = Tuya33
+  deriving (Show)
+
+data Client = Client
+  { clientSocket :: Socket
+  , clientProtocol :: Protocol
+  , clientLocalKey :: ByteString
+  , clientSequenceNumber :: IORef Word32
+  }
+
+data Device = Device
+  { deviceId :: Text
+  , deviceName :: Text
+  , deviceCategory :: Text
+  , deviceCategoryName :: Text
+  , deviceLocalKey :: Text
+  , deviceModel :: Text
+  , deviceProductId :: Text
+  , deviceProductName :: Text
+  , deviceOnline :: Bool
+  , deviceUuid :: Text
+  }
+  deriving (Show)
+
+data Specification = Specification
+  { specCategory :: Text
+  , specFunctions :: [Function]
+  , specStatus :: [Status]
+  }
+  deriving (Show)
+
+data DeviceSpecification = DeviceSpecification
+  { dsDevice :: Device
+  , dsSpecification :: Specification
+  }
+  deriving (Show)
+
+data Function = Function
+  { funcCode :: Text
+  , funcDpId :: Integer
+  , funcName :: Text
+  , funcType :: Text
+  , funcValues :: Values
+  }
+  deriving (Show)
+
+data Status = Status
+  { statusCode :: Text
+  , statusDpId :: Integer
+  , statusName :: Text
+  , statusType :: Text
+  , statusValues :: Values
+  }
+  deriving (Show)
+
+data Values = Values
+  { valUnit :: Maybe Text
+  , valMin :: Maybe Integer
+  , valMax :: Maybe Integer
+  , valScale :: Maybe Integer
+  , valStep :: Maybe Integer
+  , valRange :: Maybe [Text]
+  , valLabel :: Maybe [Text]
+  , valMaxLen :: Maybe Integer
+  }
+  deriving (Show)
+
+{- FOURMOLU_DISABLE -}
+instance FromJSON Gateway where
+  parseJSON :: Value -> Parser Gateway
+  parseJSON = withObject "Gateway" $ \v ->
+    Gateway
+      <$> v .: "ip"
+      <*> v .: "gwId"
+      <*> v .: "active"
+      <*> v .: "encrypt"
+      <*> v .: "productKey"
+      <*> v .: "version"
+
+instance FromJSON Device where
+  parseJSON = withObject "Device" $ \v ->
+    Device
+      <$> v .: "id"
+      <*> v .: "name"
+      <*> v .: "category"
+      <*> v .: "category_name"
+      <*> v .: "local_key"
+      <*> v .: "model"
+      <*> v .: "product_id"
+      <*> v .: "product_name"
+      <*> v .: "online"
+      <*> v .: "uuid"
+
+instance ToJSON Device where
+  toJSON Device{..} =
+    object
+      [
+      "id" .= deviceId
+      , "name" .= deviceName
+      , "category" .= deviceCategory
+      , "category_name" .= deviceCategoryName
+      , "local_key" .= deviceLocalKey
+      , "model" .= deviceModel
+      , "product_id" .= deviceProductId
+      , "product_name" .= deviceProductName
+      , "online" .= deviceOnline
+      , "uuid" .= deviceUuid
+      ]
+
+instance FromJSON Specification where
+  parseJSON =
+    withObject "Specification" $ \v ->
+      Specification
+        <$> v .: "category"
+        <*> v .: "functions"
+        <*> v .: "status"
+
+instance ToJSON Specification where
+  toJSON Specification{..} =
+    object
+      [ "category" .= specCategory
+      , "functions" .= specFunctions
+      , "status" .= specStatus
+      ]
+
+instance FromJSON Function where
+  parseJSON =
+    withObject "Function" $ \v ->
+      Function
+        <$> v .: "code"
+        <*> v .:? "dp_id" .!= 0
+        <*> v .:? "name" .!= ""
+        <*> v .: "type"
+        <*> v .: "values"
+
+instance ToJSON Function where
+  toJSON Function{..} =
+    object
+      [ "code" .= funcCode
+      , "dp_id" .= funcDpId
+      , "name" .= funcName
+      , "type" .= funcType
+      , "values" .= funcValues
+      ]
+
+instance FromJSON Status where
+  parseJSON =
+    withObject "Status" $ \v ->
+      Status
+        <$> v .: "code"
+        <*> v .:? "dp_id" .!= 0
+        <*> v .:? "name" .!= ""
+        <*> v .: "type"
+        <*> v .: "values"
+
+instance ToJSON Status where
+  toJSON Status{..} =
+    object
+      [ "code" .= statusCode
+      , "dp_id" .= statusDpId
+      , "name" .= statusName
+      , "type" .= statusType
+      , "values" .= statusValues
+      ]
+
+instance FromJSON Values where
+  parseJSON a = go a <|> withEmbeddedJSON "EmbeddedValue" go a
+   where
+    go =
+      withObject "Values" $ \v ->
+        Values
+          <$> v .:? "unit"
+          <*> v .:? "min"
+          <*> v .:? "max"
+          <*> v .:? "scale"
+          <*> v .:? "step"
+          <*> v .:? "range"
+          <*> v .:? "label"
+          <*> v .:? "maxlen"
+
+instance ToJSON Values where
+  toJSON Values{..} =
+    noNulls
+      [ "unit" .= valUnit
+      , "min" .= valMin
+      , "max" .= valMax
+      , "scale" .= valScale
+      , "range" .= valRange
+      , "label" .= valLabel
+      , "maxlen" .= valMaxLen
+      ]
+
+instance FromJSON DeviceSpecification where
+  parseJSON =
+    withObject "DeviceSpecification" $ \v ->
+      DeviceSpecification
+        <$> v .: "dev"
+        <*> v .: "spec"
+
+instance ToJSON DeviceSpecification where
+  toJSON DeviceSpecification{..} =
+    object
+      [ "dev" .= dsDevice
+      , "spec" .= dsSpecification
+      ]
+{- FOURMOLU_ENABLE -}
+
+data Discovered = Discovered
+  { discoveredIds :: HashMap Text Gateway
+  , discoveredAddrs :: Map SockAddr Gateway
+  }
+  deriving (Show)
 
 data CommandType
   = Udp
@@ -41,7 +268,7 @@ data CommandType
   | SessKeyNegFinish
   | Unbind
   | Control
-  | Status
+  | Status'
   | HeartBeat
   | DpQuery
   | QueryWifi
@@ -50,6 +277,7 @@ data CommandType
   | EnableWifi
   | DpQueryNew
   | SceneExecute
+  | DpRefresh
   | UdpNew
   | ApConfigNew
   | BroadcastLpv34
@@ -79,7 +307,7 @@ instance Enum CommandType where
   fromEnum SessKeyNegFinish = 5
   fromEnum Unbind = 6
   fromEnum Control = 7
-  fromEnum Status = 8
+  fromEnum Status' = 8
   fromEnum HeartBeat = 9
   fromEnum DpQuery = 10
   fromEnum QueryWifi = 100
@@ -88,6 +316,7 @@ instance Enum CommandType where
   fromEnum EnableWifi = 14
   fromEnum DpQueryNew = 16
   fromEnum SceneExecute = 17
+  fromEnum DpRefresh = 18
   fromEnum UdpNew = 19
   fromEnum ApConfigNew = 20
   fromEnum BroadcastLpv34 = 35
@@ -115,7 +344,7 @@ instance Enum CommandType where
   toEnum 5 = SessKeyNegFinish
   toEnum 6 = Unbind
   toEnum 7 = Control
-  toEnum 8 = Status
+  toEnum 8 = Status'
   toEnum 9 = HeartBeat
   toEnum 10 = DpQuery
   toEnum 100 = QueryWifi
@@ -124,6 +353,7 @@ instance Enum CommandType where
   toEnum 14 = EnableWifi
   toEnum 16 = DpQueryNew
   toEnum 17 = SceneExecute
+  toEnum 18 = DpRefresh
   toEnum 19 = UdpNew
   toEnum 20 = ApConfigNew
   toEnum 35 = BroadcastLpv34
@@ -141,3 +371,6 @@ instance Enum CommandType where
   toEnum 250 = LanCheckGwUpdate
   toEnum 251 = LanGwUpdate
   toEnum 252 = LanSetGwChannel
+
+noNulls :: [(Key, Value)] -> Value
+noNulls = object . filter ((/= Null) . snd)

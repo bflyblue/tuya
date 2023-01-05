@@ -27,19 +27,47 @@ library
   ghc-options:      -Wall -O
   build-depends:    base
   exposed-modules:
+    Tuya.Cloud
+    Tuya.Config
     Tuya.Decode
+    Tuya.Devices
     Tuya.Discover
+    Tuya.Encode
+    Tuya.HomeAssistant
+    Tuya.Local
+    Tuya.Poll
     Tuya.Types
 
   build-depends:
     , aeson
+    , aeson-casing
+    , async
+    , authenticate-oauth
     , base
+    , base16-bytestring
     , bytestring
+    , case-insensitive
     , cereal
+    , containers
     , cryptonite
+    , digest
+    , http-client
+    , http-client-tls
+    , http-types
     , memory
+    , net-mqtt
     , network
+    , network-uri
+    , postgresql-simple
+    , pqueue
+    , req
+    , resource-pool
+    , scientific
+    , text
+    , time
+    , transformers
     , unordered-containers
+    , yaml
 
 executable tuya
   main-is:          Main.hs
@@ -49,5 +77,10 @@ executable tuya
 
   -- other-modules:    
   build-depends:
+    , aeson
+    , async
     , base
+    , network
+    , text
+    , time
     , tuya

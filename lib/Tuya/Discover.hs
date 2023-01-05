@@ -4,12 +4,18 @@ module Tuya.Discover where
 
 import Control.Monad (forever)
 import Crypto.Hash (Digest, MD5, hash)
+import qualified Data.Aeson as Aeson
 import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
-import Network.Socket
-import Network.Socket.ByteString
+import Data.ByteString.Lazy (fromStrict)
+import qualified Network.MQTT.Client as MQTT
+import qualified Network.MQTT.Topic as MQTT
+import qualified Network.Socket as Sock
+import qualified Network.Socket.ByteString as Sock
 
+import Tuya.Config
 import Tuya.Decode
+import Tuya.Types
 
 discoverKey :: ByteString
 discoverKey = convert (md5 "yGAdlopoPVldABfn")
@@ -17,12 +23,25 @@ discoverKey = convert (md5 "yGAdlopoPVldABfn")
   md5 :: ByteString -> Digest MD5
   md5 = hash
 
-discover :: IO ()
-discover = do
-  s <- socket AF_INET Datagram defaultProtocol
-  bind s (SockAddrInet 6667 (tupleToHostAddress (0, 0, 0, 0)))
-
+discover :: MqttSettings -> IO ()
+discover mqttSettings = do
+  mc <- mqttClient mqttSettings
+  s <- udpSocket 6667
   forever $ do
-    (b, f) <- recvFrom s 65536
-    let t = either error id (decode discoverKey b)
-    print (f, t)
+    (bs, _f) <- Sock.recvFrom s 65536
+    let m = either error id (decode discoverKey bs)
+        Just gw = Aeson.decodeStrict' (msgPayload m)
+        Just topic = MQTT.mkTopic ("tuya/device/" <> gwGwId gw <> "/discover")
+    MQTT.publish mc topic (fromStrict (msgPayload m)) False
+
+mqttClient :: MqttSettings -> IO MQTT.MQTTClient
+mqttClient settings =
+  MQTT.connectURI
+    MQTT.mqttConfig{MQTT._protocol = mqttProtocol settings}
+    (mqttBrokerUri settings)
+
+udpSocket :: Sock.PortNumber -> IO Sock.Socket
+udpSocket port = do
+  s <- Sock.socket Sock.AF_INET Sock.Datagram Sock.defaultProtocol
+  Sock.bind s (Sock.SockAddrInet port (Sock.tupleToHostAddress (0, 0, 0, 0)))
+  return s
