@@ -3,4 +3,3 @@ result
 *.sql
 *.yaml
 .direnv
-*.duckdb
