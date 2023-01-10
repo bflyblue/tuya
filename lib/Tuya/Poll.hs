@@ -5,6 +5,7 @@ module Tuya.Poll where
 
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Exception
 import Control.Monad
 import Data.Aeson
 import qualified Data.Aeson.Key as Key
@@ -73,17 +74,17 @@ pollDevice env devId = do
   ips <- readIORef (envIps env)
   keys <- readIORef (envKeys env)
   case (HM.lookup devId ips, HM.lookup devId keys) of
-    (Just ip, Just key) -> do
-      sockaddr <- sockAddrForIp ip
-      c <- connect sockaddr Tuya33 key
-      t <- getT'
-      sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
-      v <- recvMsg c
-      case v of
-        Left _ -> return ()
-        Right msg -> deviceStatus env devId (msgPayload msg)
-      close c
-      return (Just 10)
+    (Just ip, Just key) ->
+      handle (\e -> print (e :: IOException) >> return (Just 0)) $ do
+        sockaddr <- sockAddrForIp ip
+        bracket (connect sockaddr Tuya33 key) close $ \c -> do
+          t <- getT'
+          sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+          v <- recvMsg c
+          case v of
+            Left _ -> return ()
+            Right msg -> deviceStatus env devId (msgPayload msg)
+        return (Just 10)
     _ -> return (Just 60)
  where
   getT' = Text.pack . formatTime defaultTimeLocale "%s" <$> getCurrentTime
