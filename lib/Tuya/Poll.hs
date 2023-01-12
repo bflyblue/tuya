@@ -7,6 +7,7 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
+import Crypto.Error (CryptoError)
 import Data.Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KeyMap
@@ -75,19 +76,27 @@ pollDevice env devId = do
   keys <- readIORef (envKeys env)
   case (HM.lookup devId ips, HM.lookup devId keys) of
     (Just ip, Just key) ->
-      handle (\e -> print (e :: IOException) >> return (Just 0)) $ do
-        sockaddr <- sockAddrForIp ip
-        bracket (connect sockaddr Tuya33 key) close $ \c -> do
-          t <- getT'
-          sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
-          v <- recvMsg c
-          case v of
-            Left _ -> return ()
-            Right msg -> deviceStatus env devId (msgPayload msg)
-        return (Just 10)
+      -- handle (\e -> print (e :: IOException) >> return (Just 0)) $ do
+      catches
+        (go ip key)
+        [ Handler
+            (\e -> print (e :: IOException) >> return (Just 0))
+        , Handler
+            (\e -> print (e :: CryptoError) >> return (Just 0))
+        ]
     _ -> return (Just 60)
  where
   getT' = Text.pack . formatTime defaultTimeLocale "%s" <$> getCurrentTime
+  go ip key = do
+    sockaddr <- sockAddrForIp ip
+    bracket (connect sockaddr Tuya33 key) close $ \c -> do
+      t <- getT'
+      sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+      v <- recvMsg c
+      case v of
+        Left _ -> return ()
+        Right msg -> deviceStatus env devId (msgPayload msg)
+    return (Just 10)
 
 deviceStatus :: Env -> Text -> DeviceStatus -> IO ()
 deviceStatus env devId status = do
