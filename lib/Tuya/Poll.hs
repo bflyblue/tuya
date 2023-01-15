@@ -16,7 +16,7 @@ import Data.Foldable (traverse_)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
-import qualified Data.PQueue.Prio.Min as PQ
+import qualified Data.List as List
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Text.Encoding
@@ -38,14 +38,26 @@ data Env = Env
   , envKeys :: IORef (HashMap Text BS.ByteString)
   , envSpecs :: IORef (HashMap Text Specification)
   , envStatusMap :: IORef (HashMap Text (HashMap Text Text))
-  , envSchedule :: IORef (PQ.MinPQueue UTCTime Text)
   }
 
 poller :: Config -> IO ()
 poller cfg = do
   mc <- MQTT.connectURI MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg)} (mqttBrokerUri (cfgMqtt cfg))
-  env <- Env cfg mc <$> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty
-  sub env
+  env <- Env cfg mc <$> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty
+  reaper env `concurrently_` sub env
+
+reaper :: Env -> IO ()
+reaper env = forever $ do
+  threadDelay 1000000
+  pollers <- HM.toList <$> readIORef (envPollers env)
+  (a, r) <- waitAnyCatch (snd <$> pollers)
+  let devId = fst <$> List.find ((== a) . snd) pollers
+  case r of
+    Left e -> putStrLn $ "Poller for " <> show devId <> " threw exception " <> show e
+    Right v -> putStrLn $ "Poller for " <> show devId <> " exited with result" <> show v
+  case devId of
+    Just d -> modifyIORef' (envPollers env) (HM.delete d)
+    Nothing -> return ()
 
 sub :: Env -> IO ()
 sub env = do
@@ -57,7 +69,8 @@ sub env = do
   _ <-
     MQTT.subscribe
       mc
-      [ ("tuya/device/+/ip", MQTT.subOptions)
+      [ ("tuya/device/+/discover", MQTT.subOptions)
+      , ("tuya/device/+/ip", MQTT.subOptions)
       , ("tuya/device/+/key", MQTT.subOptions)
       , ("tuya/device/+/spec", MQTT.subOptions)
       ]
@@ -66,14 +79,16 @@ sub env = do
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> LBS.ByteString -> [MQTT.Property] -> IO ()
 msgReceived env _mc topic payload _
+  | MQTT.match "tuya/device/+/discover" topic = do
+      let devId = MQTT.unTopic $ MQTT.split topic !! 2
+      ensurePoller env devId
   | MQTT.match "tuya/device/+/ip" topic = do
       let devId = MQTT.unTopic $ MQTT.split topic !! 2
-      cancelPoller env devId
       update
         devId
         (decodeUtf8 $ LBS.toStrict payload)
         (envIps env)
-      startPoller env devId
+      cancelPoller env devId
   | MQTT.match "tuya/device/+/key" topic =
       update
         (MQTT.unTopic $ MQTT.split topic !! 2)
@@ -99,10 +114,18 @@ statusMap spec = mconcat $ map go (specStatus spec)
  where
   go s = HM.singleton (Text.pack $ show $ statusDpId s) (statusCode s)
 
+ensurePoller :: Env -> Text -> IO ()
+ensurePoller env devId = do
+  pollers <- readIORef (envPollers env)
+  case HM.lookup devId pollers of
+    Just a -> return ()
+    Nothing -> startPoller env devId
+
 startPoller :: Env -> Text -> IO ()
 startPoller env devId = do
-  a <- async (devicePoller env devId)
+  a <- async (threadDelay 2000000 >> devicePoller env devId)
   modifyIORef' (envPollers env) $ HM.insert devId a
+  putStrLn $ "Started poller for " <> show devId
 
 cancelPoller :: Env -> Text -> IO ()
 cancelPoller env devId = do
