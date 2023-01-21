@@ -20,8 +20,8 @@ import Data.IORef
 import qualified Data.List as List
 import Data.Text (Text)
 import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
 import Data.Text.Encoding
+import qualified Data.Text.IO as Text
 import Data.Time.Clock
 import Data.Time.Format
 import qualified Network.MQTT.Client as MQTT
@@ -29,6 +29,7 @@ import qualified Network.MQTT.Topic as MQTT
 import qualified Network.Socket as S
 import System.Timeout
 
+import Crypto.Random (MonadRandom (getRandomBytes))
 import Tuya.Config
 import Tuya.Local
 import Tuya.Types
@@ -100,9 +101,9 @@ msgReceived env _mc topic payload _
   | MQTT.match "tuya/device/+/version" topic = do
       let devId = MQTT.unTopic $ MQTT.split topic !! 2
       let mproto = case decodeUtf8 (LBS.toStrict payload) of
-                     "3.3" -> Just Tuya33
-                     -- "3.4" -> Just Tuya34
-                     _ -> Nothing
+            -- "3.3" -> Just Tuya33
+            "3.4" -> Just Tuya34
+            _ -> Nothing
       update devId mproto (envVers env)
       cancelPoller env devId
   | MQTT.match "tuya/device/+/key" topic =
@@ -134,7 +135,7 @@ ensurePoller :: Env -> Text -> IO ()
 ensurePoller env devId = do
   pollers <- readIORef (envPollers env)
   case HM.lookup devId pollers of
-    Just a -> return ()
+    Just _ -> return ()
     Nothing -> startPoller env devId
 
 startPoller :: Env -> Text -> IO ()
@@ -173,11 +174,18 @@ pollDevice env devId = do
         Just c -> do
           t <- getT'
           Text.putStrLn $ devId <> " fetching status"
-          sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+          case ver of
+            Tuya33 -> sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+            Tuya34 -> do
+              sesskey <- getRandomBytes 16
+              sendCmdBS c SessKeyNegStart sesskey
+              res <- recvBS 1000000 c
+              print res -- remote sesskey
+              -- sendCmd c DpQueryNew (GetDeviceStatus devId devId t devId)
           Text.putStrLn $ devId <> " waiting reply"
           v <- recvMsg 1000000 c
           case v of
-            Left err -> error $ "recvMesg failed: " <> err
+            Left err -> error $ "recvMsg failed: " <> err
             Right msg -> do
               Text.putStrLn $ devId <> " publishing status to mqtt"
               deviceStatus env devId smap (msgPayload msg)

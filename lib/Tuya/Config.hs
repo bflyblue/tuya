@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Tuya.Config where
 
@@ -17,7 +18,6 @@ import Network.URI as Network
 data Config = Config
   { cfgMqtt :: MqttSettings
   , cfgTuya :: TuyaSettings
-  , cfgDatabase :: DatabaseSettings
   }
   deriving (Eq, Show, Generic)
 
@@ -34,11 +34,6 @@ data TuyaSettings = TuyaSettings
   }
   deriving (Eq, Show, Generic)
 
-data DatabaseSettings = DatabaseSettings
-  { dbConnectString :: Text
-  }
-  deriving (Eq, Show, Generic)
-
 instance FromJSON Config where
   parseJSON = genericParseJSON opts
 
@@ -46,9 +41,6 @@ instance FromJSON MqttSettings where
   parseJSON = genericParseJSON opts
 
 instance FromJSON TuyaSettings where
-  parseJSON = genericParseJSON opts
-
-instance FromJSON DatabaseSettings where
   parseJSON = genericParseJSON opts
 
 {- Orphans -}
