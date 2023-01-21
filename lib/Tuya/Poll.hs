@@ -8,9 +8,16 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
+import Crypto.Cipher.AES (AES128)
+import Crypto.Cipher.Types (cipherInit, ecbEncrypt)
+import Crypto.Error (throwCryptoError)
+import Crypto.Hash (SHA256)
+import Crypto.MAC.HMAC (HMAC (hmacGetDigest), hmac)
+import Crypto.Random (MonadRandom (getRandomBytes))
 import Data.Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KeyMap
+import Data.ByteArray (convert, xor)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (traverse_)
@@ -29,7 +36,6 @@ import qualified Network.MQTT.Topic as MQTT
 import qualified Network.Socket as S
 import System.Timeout
 
-import Crypto.Random (MonadRandom (getRandomBytes))
 import Tuya.Config
 import Tuya.Local
 import Tuya.Types
@@ -101,7 +107,7 @@ msgReceived env _mc topic payload _
   | MQTT.match "tuya/device/+/version" topic = do
       let devId = MQTT.unTopic $ MQTT.split topic !! 2
       let mproto = case decodeUtf8 (LBS.toStrict payload) of
-            -- "3.3" -> Just Tuya33
+            "3.3" -> Just Tuya33
             "3.4" -> Just Tuya34
             _ -> Nothing
       update devId mproto (envVers env)
@@ -174,16 +180,30 @@ pollDevice env devId = do
         Just c -> do
           t <- getT'
           Text.putStrLn $ devId <> " fetching status"
-          case ver of
-            Tuya33 -> sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+          v <- case ver of
+            Tuya33 -> do
+              sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+              Text.putStrLn $ devId <> " waiting reply"
+              recvMsg 1000000 c
             Tuya34 -> do
-              sesskey <- getRandomBytes 16
-              sendCmdBS c SessKeyNegStart sesskey
+              localKey <- getRandomBytes 16
+              sendCmdBS c SessKeyNegStart localKey
               res <- recvBS 1000000 c
-              print res -- remote sesskey
-              -- sendCmd c DpQueryNew (GetDeviceStatus devId devId t devId)
-          Text.putStrLn $ devId <> " waiting reply"
-          v <- recvMsg 1000000 c
+              case res of
+                Left err -> error $ "recvBS failed: " <> err
+                Right res' -> do
+                  let
+                    (remoteKey, expectedHmac) = BS.splitAt 16 (msgPayload res')
+                    localHmac = convert $ hmacGetDigest $ sha256 key localKey
+                    remoteHmac = convert $ hmacGetDigest $ sha256 key remoteKey
+                  unless (localHmac == expectedHmac) $ fail "HMAC mismatch during session negotiation"
+                  sendCmdBS c SessKeyNegFinish remoteHmac
+                  Text.putStrLn $ devId <> " session negotiation successful"
+                  let
+                    xored = xor localKey remoteKey
+                    sessionKey = ecbEncrypt (cipher key) xored
+                  sendCmd' sessionKey c DpQueryNew (GetDeviceStatus devId devId t devId)
+                  recvMsg' sessionKey 1000000 c
           case v of
             Left err -> error $ "recvMsg failed: " <> err
             Right msg -> do
@@ -195,6 +215,12 @@ pollDevice env devId = do
     _ -> threadDelay 10000000
  where
   getT' = Text.pack . formatTime defaultTimeLocale "%s" <$> getCurrentTime
+
+sha256 :: BS.ByteString -> BS.ByteString -> HMAC SHA256
+sha256 = hmac
+
+cipher :: BS.ByteString -> AES128
+cipher = throwCryptoError . cipherInit
 
 data GetDeviceStatus = GetDeviceStatus
   { gdsGwId :: Text
