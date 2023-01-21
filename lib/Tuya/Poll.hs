@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -19,12 +20,14 @@ import Data.IORef
 import qualified Data.List as List
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import Data.Text.Encoding
 import Data.Time.Clock
 import Data.Time.Format
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
 import qualified Network.Socket as S
+import System.Timeout
 
 import Tuya.Config
 import Tuya.Local
@@ -35,6 +38,7 @@ data Env = Env
   , envMc :: MQTT.MQTTClient
   , envPollers :: IORef (HashMap Text (Async ()))
   , envIps :: IORef (HashMap Text Text)
+  , envVers :: IORef (HashMap Text (Maybe Protocol))
   , envKeys :: IORef (HashMap Text BS.ByteString)
   , envSpecs :: IORef (HashMap Text Specification)
   , envStatusMap :: IORef (HashMap Text (HashMap Text Text))
@@ -43,21 +47,24 @@ data Env = Env
 poller :: Config -> IO ()
 poller cfg = do
   mc <- MQTT.connectURI MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg)} (mqttBrokerUri (cfgMqtt cfg))
-  env <- Env cfg mc <$> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty
+  env <- Env cfg mc <$> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty <*> newIORef mempty
   reaper env `concurrently_` sub env
 
 reaper :: Env -> IO ()
 reaper env = forever $ do
-  threadDelay 1000000
   pollers <- HM.toList <$> readIORef (envPollers env)
-  (a, r) <- waitAnyCatch (snd <$> pollers)
-  let devId = fst <$> List.find ((== a) . snd) pollers
-  case r of
-    Left e -> putStrLn $ "Poller for " <> show devId <> " threw exception " <> show e
-    Right v -> putStrLn $ "Poller for " <> show devId <> " exited with result" <> show v
-  case devId of
-    Just d -> modifyIORef' (envPollers env) (HM.delete d)
-    Nothing -> return ()
+  mc <- timeout 1000000 $ waitAnyCatch (snd <$> pollers)
+  case mc of
+    Just (a, r) -> do
+      let devId = fst <$> List.find ((== a) . snd) pollers
+      case r of
+        Left e -> putStrLn $ "Poller for " <> show devId <> " threw exception " <> show e
+        Right v -> putStrLn $ "Poller for " <> show devId <> " exited with result" <> show v
+      case devId of
+        Just d -> modifyIORef' (envPollers env) (HM.delete d)
+        Nothing -> return ()
+    Nothing ->
+      threadDelay 100000
 
 sub :: Env -> IO ()
 sub env = do
@@ -71,6 +78,7 @@ sub env = do
       mc
       [ ("tuya/device/+/discover", MQTT.subOptions)
       , ("tuya/device/+/ip", MQTT.subOptions)
+      , ("tuya/device/+/version", MQTT.subOptions)
       , ("tuya/device/+/key", MQTT.subOptions)
       , ("tuya/device/+/spec", MQTT.subOptions)
       ]
@@ -88,6 +96,14 @@ msgReceived env _mc topic payload _
         devId
         (decodeUtf8 $ LBS.toStrict payload)
         (envIps env)
+      cancelPoller env devId
+  | MQTT.match "tuya/device/+/version" topic = do
+      let devId = MQTT.unTopic $ MQTT.split topic !! 2
+      let mproto = case decodeUtf8 (LBS.toStrict payload) of
+                     "3.3" -> Just Tuya33
+                     -- "3.4" -> Just Tuya34
+                     _ -> Nothing
+      update devId mproto (envVers env)
       cancelPoller env devId
   | MQTT.match "tuya/device/+/key" topic =
       update
@@ -124,8 +140,12 @@ ensurePoller env devId = do
 startPoller :: Env -> Text -> IO ()
 startPoller env devId = do
   a <- async (threadDelay 2000000 >> devicePoller env devId)
-  modifyIORef' (envPollers env) $ HM.insert devId a
-  putStrLn $ "Started poller for " <> show devId
+  mp <- atomicModifyIORef' (envPollers env) $ \pollers -> (HM.insert devId a pollers, HM.lookup devId pollers)
+  case mp of
+    Just p -> do
+      putStrLn $ "Replacing poller for " <> show devId
+      cancel p
+    Nothing -> putStrLn $ "Started poller for " <> show devId
 
 cancelPoller :: Env -> Text -> IO ()
 cancelPoller env devId = do
@@ -140,19 +160,29 @@ devicePoller env devId = forever $ pollDevice env devId
 
 pollDevice :: Env -> Text -> IO ()
 pollDevice env devId = do
+  Text.putStrLn $ devId <> " Read vars"
   ips <- readIORef (envIps env)
+  vers <- readIORef (envVers env)
   keys <- readIORef (envKeys env)
   maps <- readIORef (envStatusMap env)
-  case (HM.lookup devId ips, HM.lookup devId keys, HM.lookup devId maps) of
-    (Just ip, Just key, Just smap) -> do
+  case (HM.lookup devId ips, HM.lookup devId vers, HM.lookup devId keys, HM.lookup devId maps) of
+    (Just ip, Just (Just ver), Just key, Just smap) -> do
+      Text.putStrLn $ devId <> " connecting to " <> ip
       sockaddr <- sockAddrForIp ip
-      bracket (connect sockaddr Tuya33 key) close $ \c -> do
-        t <- getT'
-        sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
-        v <- recvMsg c
-        case v of
-          Left err -> error $ "recvMesg failed: " <> err
-          Right msg -> deviceStatus env devId smap (msgPayload msg)
+      bracket (connect 1000000 sockaddr ver key) (traverse_ close) $ \case
+        Just c -> do
+          t <- getT'
+          Text.putStrLn $ devId <> " fetching status"
+          sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+          Text.putStrLn $ devId <> " waiting reply"
+          v <- recvMsg 1000000 c
+          case v of
+            Left err -> error $ "recvMesg failed: " <> err
+            Right msg -> do
+              Text.putStrLn $ devId <> " publishing status to mqtt"
+              deviceStatus env devId smap (msgPayload msg)
+          Text.putStrLn $ devId <> " disconnecting"
+        Nothing -> Text.putStrLn $ devId <> " connect time out"
       threadDelay 10000000
     _ -> threadDelay 10000000
  where

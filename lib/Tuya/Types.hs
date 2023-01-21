@@ -9,12 +9,10 @@ import Control.Applicative ((<|>))
 import Data.Aeson
 import Data.Aeson.Types (Parser)
 import Data.ByteString (ByteString)
-import Data.HashMap.Strict (HashMap)
 import Data.IORef (IORef)
-import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Word (Word32)
-import Network.Socket (SockAddr, Socket)
+import Network.Socket (Socket)
 
 data Raw = Raw
   { rawPrefix :: Word32
@@ -46,8 +44,8 @@ data Gateway = Gateway
   }
   deriving (Show)
 
-data Protocol = Tuya33
-  deriving (Show)
+data Protocol = Tuya33 | Tuya34
+  deriving (Show, Eq, Ord)
 
 data Client = Client
   { clientSocket :: Socket
@@ -252,12 +250,6 @@ instance ToJSON DeviceSpecification where
       , "spec" .= dsSpecification
       ]
 {- FOURMOLU_ENABLE -}
-
-data Discovered = Discovered
-  { discoveredIds :: HashMap Text Gateway
-  , discoveredAddrs :: Map SockAddr Gateway
-  }
-  deriving (Show)
 
 data CommandType
   = Udp

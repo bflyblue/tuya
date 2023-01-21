@@ -29,7 +29,7 @@ discover mqttSettings = do
   s <- udpSocket 6667
   forever $ do
     (bs, _f) <- Sock.recvFrom s 65536
-    let m = either error id (decode discoverKey bs)
+    let m = either error id (decode Tuya33 discoverKey bs)
         Just gw = Aeson.decodeStrict' (msgPayload m)
         Just topic = MQTT.mkTopic ("tuya/device/" <> gwGwId gw <> "/discover")
     MQTT.publish mc topic (fromStrict (msgPayload m)) False

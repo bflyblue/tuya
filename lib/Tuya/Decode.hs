@@ -12,9 +12,13 @@ import Data.Serialize.Get
 
 import Tuya.Types
 
-decode :: ByteString -> ByteString -> Either String (Msg ByteString)
-decode key bs = do
-  Raw{..} <- decodeRaw bs
+decode :: Protocol -> ByteString -> ByteString -> Either String (Msg ByteString)
+decode Tuya33 = decode33
+decode Tuya34 = decode34
+
+decode33 :: ByteString -> ByteString -> Either String (Msg ByteString)
+decode33 key bs = do
+  Raw{..} <- runGet getRaw33 bs
   if rawPrefix == 0x55aa && rawSuffix == 0xaa55
     then do
       let decrypted = decryptPayload key rawPayload
@@ -27,11 +31,23 @@ decode key bs = do
           }
     else Left "Prefix or Suffix was incorrect"
 
-decodeRaw :: ByteString -> Either String Raw
-decodeRaw = runGet getRaw
+decode34 :: ByteString -> ByteString -> Either String (Msg ByteString)
+decode34 key bs = do
+  Raw{..} <- runGet getRaw34 bs
+  if rawPrefix == 0x55aa && rawSuffix == 0xaa55
+    then do
+      let decrypted = decryptPayload key rawPayload
+      pure
+        Msg
+          { msgSequence = rawSequence
+          , msgCommand = toEnum (fromIntegral rawCommand)
+          , msgReturnCode = rawReturnCode
+          , msgPayload = decrypted
+          }
+    else Left "Prefix or Suffix was incorrect"
 
-getRaw :: Get Raw
-getRaw = do
+getRaw33 :: Get Raw
+getRaw33 = do
   rawPrefix <- getWord32be
   rawSequence <- getWord32be
   rawCommand <- getWord32be
@@ -39,6 +55,19 @@ getRaw = do
   rawReturnCode <- getWord32be
   rawPayload <- getByteString (fromIntegral rawPayloadSize - 12)
   rawCrc <- getWord32be
+  rawSuffix <- getWord32be
+  return Raw{..}
+
+getRaw34 :: Get Raw
+getRaw34 = do
+  rawPrefix <- getWord32be
+  rawSequence <- getWord32be
+  rawCommand <- getWord32be
+  rawPayloadSize <- getWord32be
+  rawReturnCode <- getWord32be
+  rawPayload <- getByteString (fromIntegral rawPayloadSize - 40)
+  rawCrc <- getWord32be
+  skip 28
   rawSuffix <- getWord32be
   return Raw{..}
 

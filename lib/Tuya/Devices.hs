@@ -22,11 +22,12 @@ data Env = Env
   { envCfg :: Config
   , envIps :: IORef (HashMap Text Text)
   , envKeys :: IORef (HashMap Text Text)
+  , envVers :: IORef (HashMap Text Text)
   }
 
 serve :: Config -> IO ()
 serve cfg = do
-  env <- Env cfg <$> newIORef mempty <*> newIORef mempty
+  env <- Env cfg <$> newIORef mempty <*> newIORef mempty <*> newIORef mempty
   mc <-
     MQTT.connectURI
       MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg), MQTT._msgCB = MQTT.SimpleCallback (msgReceived env)}
@@ -50,12 +51,22 @@ discoverDevice env mc devId payload = do
           | ip == gwIp gw -> return ()
           | otherwise -> newIp devId (gwIp gw)
         Nothing -> newIp devId (gwIp gw)
+      vers <- readIORef (envVers env)
+      case HM.lookup devId vers of
+        Just ver
+          | ver == gwVersion gw -> return ()
+          | otherwise -> newVersion devId (gwVersion gw)
+        Nothing -> newVersion devId (gwVersion gw)
     Nothing -> return ()
  where
   newIp devid ip = do
     let Just topic = MQTT.mkTopic ("tuya/device/" <> devid <> "/ip")
     MQTT.publish mc topic (fromStrict $ encodeUtf8 ip) True
     modifyIORef' (envIps env) (HM.insert devId ip)
+  newVersion devid ver = do
+    let Just topic = MQTT.mkTopic ("tuya/device/" <> devid <> "/version")
+    MQTT.publish mc topic (fromStrict $ encodeUtf8 ver) True
+    modifyIORef' (envVers env) (HM.insert devId ver)
 
 getDeviceDetails :: Env -> MQTT.MQTTClient -> Text -> IO ()
 getDeviceDetails env mc devId = do
