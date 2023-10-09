@@ -13,7 +13,9 @@ import Tuya.Poll
 main :: IO ()
 main = do
   cfg <- readConfigFile "tuya.yaml"
-  discover (cfgMqtt cfg)
-    `concurrently_` serve cfg
-    `concurrently_` poller cfg
-    `concurrently_` homeAssist cfg
+  poller cfg
+
+-- discover (cfgMqtt cfg)
+--   `concurrently_` serve cfg
+--   `concurrently_` poller cfg
+--   `concurrently_` homeAssist cfg
