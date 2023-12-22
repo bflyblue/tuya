@@ -76,22 +76,31 @@ reaper env = forever $ do
 
 sub :: Env -> IO ()
 sub env = do
-  let cfg = envCfg env
-  mc <-
-    MQTT.connectURI
-      MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg), MQTT._msgCB = MQTT.SimpleCallback (msgReceived env)}
-      (mqttBrokerUri (cfgMqtt cfg))
-  _ <-
-    MQTT.subscribe
-      mc
-      [ ("tuya/device/+/discover", MQTT.subOptions)
-      , ("tuya/device/+/ip", MQTT.subOptions)
-      , ("tuya/device/+/version", MQTT.subOptions)
-      , ("tuya/device/+/key", MQTT.subOptions)
-      , ("tuya/device/+/spec", MQTT.subOptions)
-      ]
-      []
-  MQTT.waitForClient mc
+  r <- try go
+  case r of
+    Left e -> do
+      putStrLn $ "MQTT exception: " <> show (e :: MQTT.MQTTException)
+      threadDelay 1000000
+      sub env
+    Right _ -> return ()
+ where
+  go = do
+    let cfg = envCfg env
+    mc <-
+      MQTT.connectURI
+        MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg), MQTT._msgCB = MQTT.SimpleCallback (msgReceived env)}
+        (mqttBrokerUri (cfgMqtt cfg))
+    _ <-
+      MQTT.subscribe
+        mc
+        [ ("tuya/device/+/discover", MQTT.subOptions)
+        , ("tuya/device/+/ip", MQTT.subOptions)
+        , ("tuya/device/+/version", MQTT.subOptions)
+        , ("tuya/device/+/key", MQTT.subOptions)
+        , ("tuya/device/+/spec", MQTT.subOptions)
+        ]
+        []
+    MQTT.waitForClient mc
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> LBS.ByteString -> [MQTT.Property] -> IO ()
 msgReceived env _mc topic payload _
