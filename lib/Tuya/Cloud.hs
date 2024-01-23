@@ -39,9 +39,9 @@ instance MonadHttp Cloud where
   handleHttpException = Cloud . lift . throwIO
 
 data CloudAuth = CloudAuth
-  { clientId :: ByteString
-  , clientSecret :: ByteString
-  , appUserId :: Text
+  { clientId :: !ByteString
+  , clientSecret :: !ByteString
+  , appUserId :: !Text
   }
 
 runCloud :: MonadIO m => CloudAuth -> Cloud a -> m a

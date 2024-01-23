@@ -19,10 +19,10 @@ import Tuya.Config
 import Tuya.Types
 
 data Env = Env
-  { envCfg :: Config
-  , envIps :: IORef (HashMap Text Text)
-  , envKeys :: IORef (HashMap Text Text)
-  , envVers :: IORef (HashMap Text Text)
+  { envCfg :: !Config
+  , envIps :: !(IORef (HashMap Text Text))
+  , envKeys :: !(IORef (HashMap Text Text))
+  , envVers :: !(IORef (HashMap Text Text))
   }
 
 serve :: Config -> IO ()

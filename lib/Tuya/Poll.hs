@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -41,14 +42,14 @@ import Tuya.Local
 import Tuya.Types
 
 data Env = Env
-  { envCfg :: Config
-  , envMc :: MQTT.MQTTClient
-  , envPollers :: IORef (HashMap Text (Async ()))
-  , envIps :: IORef (HashMap Text Text)
-  , envVers :: IORef (HashMap Text (Maybe Protocol))
-  , envKeys :: IORef (HashMap Text BS.ByteString)
-  , envSpecs :: IORef (HashMap Text Specification)
-  , envStatusMap :: IORef (HashMap Text (HashMap Text Text))
+  { envCfg :: !Config
+  , envMc :: !MQTT.MQTTClient
+  , envPollers :: !(IORef (HashMap Text (Async ())))
+  , envIps :: !(IORef (HashMap Text Text))
+  , envVers :: !(IORef (HashMap Text (Maybe Protocol)))
+  , envKeys :: !(IORef (HashMap Text BS.ByteString))
+  , envSpecs :: !(IORef (HashMap Text Specification))
+  , envStatusMap :: !(IORef (HashMap Text (HashMap Text Text)))
   }
 
 poller :: Config -> IO ()
@@ -130,7 +131,7 @@ msgReceived env _mc topic payload _
   | otherwise = return ()
 
 update :: Text -> v -> IORef (HashMap Text v) -> IO ()
-update devId val ref = modifyIORef' ref (HM.insert devId val)
+update devId !val ref = modifyIORef' ref (HM.insert devId val)
 
 statusMap :: Specification -> HashMap Text Text
 statusMap spec = mconcat $ map go (specStatus spec)
