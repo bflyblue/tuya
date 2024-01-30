@@ -168,23 +168,23 @@ devicePoller env devId = forever $ pollDevice env devId
 
 pollDevice :: Env -> Text -> IO ()
 pollDevice env devId = do
-  Text.putStrLn $ devId <> " Read vars"
+  -- Text.putStrLn $ devId <> " Read vars"
   ips <- readIORef (envIps env)
   vers <- readIORef (envVers env)
   keys <- readIORef (envKeys env)
   maps <- readIORef (envStatusMap env)
   case (HM.lookup devId ips, HM.lookup devId vers, HM.lookup devId keys, HM.lookup devId maps) of
     (Just ip, Just (Just ver), Just key, Just smap) -> do
-      Text.putStrLn $ devId <> " connecting to " <> ip
+      -- Text.putStrLn $ devId <> " connecting to " <> ip
       sockaddr <- sockAddrForIp ip
       bracket (connect 1000000 sockaddr ver key) (traverse_ close) $ \case
         Just c -> do
           t <- getT'
-          Text.putStrLn $ devId <> " fetching status"
+          -- Text.putStrLn $ devId <> " fetching status"
           v <- case ver of
             Tuya33 -> do
               sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
-              Text.putStrLn $ devId <> " waiting reply"
+              -- Text.putStrLn $ devId <> " waiting reply"
               recvMsg 1000000 c
             Tuya34 -> do
               localKey <- getRandomBytes 16
@@ -199,7 +199,7 @@ pollDevice env devId = do
                     remoteHmac = convert $ hmacGetDigest $ sha256 key remoteKey
                   unless (localHmac == expectedHmac) $ fail "HMAC mismatch during session negotiation"
                   sendCmdBS c SessKeyNegFinish remoteHmac
-                  Text.putStrLn $ devId <> " session negotiation successful"
+                  -- Text.putStrLn $ devId <> " session negotiation successful"
                   let
                     xored = xor localKey remoteKey
                     sessionKey = ecbEncrypt (cipher key) xored
@@ -208,9 +208,9 @@ pollDevice env devId = do
           case v of
             Left err -> error $ "recvMsg failed: " <> err
             Right msg -> do
-              Text.putStrLn $ devId <> " publishing status to mqtt"
+              -- Text.putStrLn $ devId <> " publishing status to mqtt"
               deviceStatus env devId smap (msgPayload msg)
-          Text.putStrLn $ devId <> " disconnecting"
+        -- Text.putStrLn $ devId <> " disconnecting"
         Nothing -> Text.putStrLn $ devId <> " connect time out"
       threadDelay 10000000
     _ -> threadDelay 10000000
