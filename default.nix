@@ -20,6 +20,7 @@ in {
         ExecStart = "${tuya}/bin/tuya ${settings}";
         Restart = "always";
         RestartSec = 5;
+        CPUAffinity = "16-31";
       };
     };
   };

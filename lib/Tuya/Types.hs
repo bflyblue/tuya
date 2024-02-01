@@ -2,6 +2,7 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE Strict #-}
 
 module Tuya.Types where
 
@@ -15,32 +16,32 @@ import Data.Word (Word32)
 import Network.Socket (Socket)
 
 data Raw = Raw
-  { rawPrefix :: !Word32
-  , rawSequence :: !Word32
-  , rawCommand :: !Word32
-  , rawPayloadSize :: !Word32
-  , rawReturnCode :: !Word32
-  , rawPayload :: !ByteString
-  , rawCrc :: !Word32
-  , rawSuffix :: !Word32
+  { rawPrefix :: Word32
+  , rawSequence :: Word32
+  , rawCommand :: Word32
+  , rawPayloadSize :: Word32
+  , rawReturnCode :: Word32
+  , rawPayload :: ByteString
+  , rawCrc :: Word32
+  , rawSuffix :: Word32
   }
   deriving (Show)
 
 data Msg a = Msg
-  { msgSequence :: !Word32
-  , msgCommand :: !CommandType
-  , msgReturnCode :: !Word32
-  , msgPayload :: !a
+  { msgSequence :: Word32
+  , msgCommand :: CommandType
+  , msgReturnCode :: Word32
+  , msgPayload :: a
   }
   deriving (Show, Functor)
 
 data Gateway = Gateway
-  { gwIp :: !Text
-  , gwGwId :: !Text
-  , gwActive :: !Int
-  , gwEncrypt :: !Bool
-  , gwProductKey :: !Text
-  , gwVersion :: !Text
+  { gwIp :: Text
+  , gwGwId :: Text
+  , gwActive :: Int
+  , gwEncrypt :: Bool
+  , gwProductKey :: Text
+  , gwVersion :: Text
   }
   deriving (Show)
 
@@ -48,66 +49,66 @@ data Protocol = Tuya33 | Tuya34
   deriving (Show, Eq, Ord)
 
 data Client = Client
-  { clientSocket :: !Socket
-  , clientProtocol :: !Protocol
-  , clientLocalKey :: !ByteString
-  , clientSequenceNumber :: !(IORef Word32)
+  { clientSocket :: Socket
+  , clientProtocol :: Protocol
+  , clientLocalKey :: ByteString
+  , clientSequenceNumber :: IORef Word32
   }
 
 data Device = Device
-  { deviceId :: !Text
-  , deviceName :: !Text
-  , deviceCategory :: !Text
-  , deviceCategoryName :: !Text
-  , deviceLocalKey :: !Text
-  , deviceModel :: !Text
-  , deviceProductId :: !Text
-  , deviceProductName :: !Text
-  , deviceOnline :: !Bool
-  , deviceUuid :: !Text
+  { deviceId :: Text
+  , deviceName :: Text
+  , deviceCategory :: Text
+  , deviceCategoryName :: Text
+  , deviceLocalKey :: Text
+  , deviceModel :: Text
+  , deviceProductId :: Text
+  , deviceProductName :: Text
+  , deviceOnline :: Bool
+  , deviceUuid :: Text
   }
   deriving (Show)
 
 data Specification = Specification
-  { specCategory :: !Text
-  , specFunctions :: ![Function]
-  , specStatus :: ![Status]
+  { specCategory :: Text
+  , specFunctions :: [Function]
+  , specStatus :: [Status]
   }
   deriving (Show)
 
 data DeviceSpecification = DeviceSpecification
-  { dsDevice :: !Device
-  , dsSpecification :: !Specification
+  { dsDevice :: Device
+  , dsSpecification :: Specification
   }
   deriving (Show)
 
 data Function = Function
-  { funcCode :: !Text
-  , funcDpId :: !Integer
-  , funcName :: !Text
-  , funcType :: !Text
-  , funcValues :: !Values
+  { funcCode :: Text
+  , funcDpId :: Integer
+  , funcName :: Text
+  , funcType :: Text
+  , funcValues :: Values
   }
   deriving (Show)
 
 data Status = Status
-  { statusCode :: !Text
-  , statusDpId :: !Integer
-  , statusName :: !Text
-  , statusType :: !Text
-  , statusValues :: !Values
+  { statusCode :: Text
+  , statusDpId :: Integer
+  , statusName :: Text
+  , statusType :: Text
+  , statusValues :: Values
   }
   deriving (Show)
 
 data Values = Values
-  { valUnit :: !(Maybe Text)
-  , valMin :: !(Maybe Integer)
-  , valMax :: !(Maybe Integer)
-  , valScale :: !(Maybe Integer)
-  , valStep :: !(Maybe Integer)
-  , valRange :: !(Maybe [Text])
-  , valLabel :: !(Maybe [Text])
-  , valMaxLen :: !(Maybe Integer)
+  { valUnit :: Maybe Text
+  , valMin :: Maybe Integer
+  , valMax :: Maybe Integer
+  , valScale :: Maybe Integer
+  , valStep :: Maybe Integer
+  , valRange :: Maybe [Text]
+  , valLabel :: Maybe [Text]
+  , valMaxLen :: Maybe Integer
   }
   deriving (Show)
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Strict #-}
 
 module Tuya.Cloud where
 
@@ -39,9 +40,9 @@ instance MonadHttp Cloud where
   handleHttpException = Cloud . lift . throwIO
 
 data CloudAuth = CloudAuth
-  { clientId :: !ByteString
-  , clientSecret :: !ByteString
-  , appUserId :: !Text
+  { clientId :: ByteString
+  , clientSecret :: ByteString
+  , appUserId :: Text
   }
 
 runCloud :: MonadIO m => CloudAuth -> Cloud a -> m a

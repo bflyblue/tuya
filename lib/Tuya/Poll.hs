@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE Strict #-}
 
 module Tuya.Poll where
 
@@ -42,14 +43,14 @@ import Tuya.Local
 import Tuya.Types
 
 data Env = Env
-  { envCfg :: !Config
-  , envMc :: !MQTT.MQTTClient
-  , envPollers :: !(IORef (HashMap Text (Async ())))
-  , envIps :: !(IORef (HashMap Text Text))
-  , envVers :: !(IORef (HashMap Text (Maybe Protocol)))
-  , envKeys :: !(IORef (HashMap Text BS.ByteString))
-  , envSpecs :: !(IORef (HashMap Text Specification))
-  , envStatusMap :: !(IORef (HashMap Text (HashMap Text Text)))
+  { envCfg :: Config
+  , envMc :: MQTT.MQTTClient
+  , envPollers :: IORef (HashMap Text (Async ()))
+  , envIps :: IORef (HashMap Text Text)
+  , envVers :: IORef (HashMap Text (Maybe Protocol))
+  , envKeys :: IORef (HashMap Text BS.ByteString)
+  , envSpecs :: IORef (HashMap Text Specification)
+  , envStatusMap :: IORef (HashMap Text (HashMap Text Text))
   }
 
 poller :: Config -> IO ()

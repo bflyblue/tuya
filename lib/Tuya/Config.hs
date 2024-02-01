@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Strict #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Tuya.Config where
@@ -16,21 +17,21 @@ import qualified Network.MQTT.Client as MQTT
 import Network.URI as Network
 
 data Config = Config
-  { cfgMqtt :: !MqttSettings
-  , cfgTuya :: !TuyaSettings
+  { cfgMqtt :: MqttSettings
+  , cfgTuya :: TuyaSettings
   }
   deriving (Eq, Show, Generic)
 
 data MqttSettings = MqttSettings
-  { mqttBrokerUri :: !Network.URI
-  , mqttProtocol :: !MQTT.ProtocolLevel
+  { mqttBrokerUri :: Network.URI
+  , mqttProtocol :: MQTT.ProtocolLevel
   }
   deriving (Eq, Show, Generic)
 
 data TuyaSettings = TuyaSettings
-  { tuyaClientId :: !Text
-  , tuyaClientSecret :: !Text
-  , tuyaAppUserId :: !Text
+  { tuyaClientId :: Text
+  , tuyaClientSecret :: Text
+  , tuyaAppUserId :: Text
   }
   deriving (Eq, Show, Generic)
 
