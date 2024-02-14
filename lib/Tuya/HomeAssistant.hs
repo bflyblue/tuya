@@ -16,6 +16,7 @@ import qualified Network.MQTT.Topic as MQTT
 -- import Data.Bits (testBit)
 -- import Data.Scientific (floatingOrInteger)
 
+import Control.Concurrent (threadDelay)
 import Tuya.Config
 import Tuya.Types
 
@@ -37,7 +38,21 @@ homeAssist cfg = do
       , ("tuya/device/+/status/+", MQTT.subOptions)
       ]
       []
+  logger env mc
   MQTT.waitForClient mc
+
+logger :: Env -> MQTT.MQTTClient -> IO ()
+logger env mc = go
+ where
+  go = do
+    threadDelay 60000000
+    specs <- readIORef (envSpecs env)
+    print $
+      "homeassist: "
+        ++ show (HM.size specs)
+        ++ " specs."
+    connected <- MQTT.isConnected mc
+    when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
 msgReceived env mc topic payload _

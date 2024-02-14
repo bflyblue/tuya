@@ -45,10 +45,10 @@ data CloudAuth = CloudAuth
   , appUserId :: Text
   }
 
-runCloud :: MonadIO m => CloudAuth -> Cloud a -> m a
+runCloud :: (MonadIO m) => CloudAuth -> Cloud a -> m a
 runCloud = runCloud' defaultHttpConfig
 
-runCloud' :: MonadIO m => HttpConfig -> CloudAuth -> Cloud a -> m a
+runCloud' :: (MonadIO m) => HttpConfig -> CloudAuth -> Cloud a -> m a
 runCloud' config auth (Cloud m) = do
   liftIO $ do
     accessToken <- runReaderT (unCloud cloudAccessToken) (config, auth, Nothing)
@@ -63,7 +63,9 @@ cloudAccessToken = do
           , header "content-type" "application/json"
           ]
   r <- reqCb GET (https "openapi.tuyaeu.com" /: "v1.0" /: "token") NoReqBody jsonResponse opts signReq
-  return (tAccessToken $ getResult $ responseBody r)
+  case getResult $ responseBody r of
+    Just tok -> return (tAccessToken tok)
+    Nothing -> error $ "No result:\n" ++ show r
 
 sign :: ByteString -> ByteString -> Maybe ByteString -> ByteString -> ByteString -> ByteString -> ByteString
 sign key clientid accessToken t nonce s = hex $ convert $ hmacGetDigest $ sha256 key (clientid <> fromMaybe mempty accessToken <> t <> nonce <> s)
@@ -95,7 +97,7 @@ signReq r = do
   noContentSha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   url = path r <> queryString r
 
-newtype Result a = Result {getResult :: a}
+data Result a = Result {getResult :: Maybe a, debugResult :: Object}
   deriving (Show)
 
 newtype Token = Token {tAccessToken :: Text}
@@ -112,7 +114,7 @@ data DeviceList = DeviceList
 instance FromJSON a => FromJSON (Result a) where
   parseJSON =
     withObject "Result" $ \w -> do
-      Result <$> w .: "result"
+      Result <$> w .:? "result" <*> pure w
 
 instance FromJSON Token where
   parseJSON =
@@ -130,7 +132,7 @@ instance FromJSON DeviceList where
 
 {- FOURMOLU_ENABLE -}
 
-getT :: MonadIO m => m ByteString
+getT :: (MonadIO m) => m ByteString
 getT = liftIO $ do
   now <- liftIO getPOSIXTime
   return $ BS.pack (formatTime defaultTimeLocale "%s000" now)
@@ -152,12 +154,14 @@ getDeviceList = do
             ]
     r <- reqCb GET (https "openapi.tuyaeu.com" /: "v1.3" /: "iot-03" /: "devices") NoReqBody jsonResponse opts signReq
 
-    let dl = getResult (responseBody r)
-    if dlHasMore dl
-      then do
-        r' <- getDeviceList' tuyaUser (Just $ dlLastRowKey dl)
-        return $ dlList dl ++ r'
-      else return $ dlList dl
+    case getResult $ responseBody r of
+      Just dl ->
+        if dlHasMore dl
+          then do
+            r' <- getDeviceList' tuyaUser (Just $ dlLastRowKey dl)
+            return $ dlList dl ++ r'
+          else return $ dlList dl
+      Nothing -> error $ "No result:\n" ++ show r
 
 getDevices :: [Text] -> Cloud [Device]
 getDevices devs = do
@@ -177,12 +181,14 @@ getDevices devs = do
             ]
     r <- reqCb GET (https "openapi.tuyaeu.com" /: "v1.3" /: "iot-03" /: "devices") NoReqBody jsonResponse opts signReq
 
-    let dl = getResult (responseBody r)
-    if dlHasMore dl
-      then do
-        r' <- getDevice' tuyaUser (Just $ dlLastRowKey dl)
-        return $ dlList dl ++ r'
-      else return $ dlList dl
+    case getResult (responseBody r) of
+      Just dl ->
+        if dlHasMore dl
+          then do
+            r' <- getDevice' tuyaUser (Just $ dlLastRowKey dl)
+            return $ dlList dl ++ r'
+          else return $ dlList dl
+      Nothing -> error $ "No result:\n" ++ show r
 
 getDeviceSpecification1 :: Text -> Cloud Specification
 getDeviceSpecification1 deviceid = do
@@ -193,7 +199,9 @@ getDeviceSpecification1 deviceid = do
           ]
   r <- reqCb GET (https "openapi.tuyaeu.com" /: "v1.1" /: "devices" /: deviceid /: "specifications") NoReqBody jsonResponse opts signReq
 
-  return $ getResult (responseBody r)
+  case getResult $ responseBody r of
+    Just spec -> return spec
+    Nothing -> error $ "No result:\n" ++ show r
 
 getDeviceSpecification2 :: Text -> Cloud Specification
 getDeviceSpecification2 deviceid = do
@@ -204,7 +212,9 @@ getDeviceSpecification2 deviceid = do
           ]
   r <- reqCb GET (https "openapi.tuyaeu.com" /: "v1.2" /: "iot-03" /: "devices" /: deviceid /: "specification") NoReqBody jsonResponse opts signReq
 
-  return $ getResult (responseBody r)
+  case getResult $ responseBody r of
+    Just spec -> return spec
+    Nothing -> error $ "No result:\n" ++ show r
 
 getDeviceSpecification :: Text -> Cloud Specification
 getDeviceSpecification deviceid = do

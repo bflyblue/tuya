@@ -62,18 +62,19 @@ poller cfg = do
 reaper :: Env -> IO ()
 reaper env = forever $ do
   pollers <- HM.toList <$> readIORef (envPollers env)
-  mc <- timeout 1000000 $ waitAnyCatch (snd <$> pollers)
-  case mc of
-    Just (a, r) -> do
-      let devId = fst <$> List.find ((== a) . snd) pollers
-      case r of
-        Left e -> putStrLn $ "Poller for " <> show devId <> " threw exception " <> show e
-        Right v -> putStrLn $ "Poller for " <> show devId <> " exited with result" <> show v
-      case devId of
-        Just d -> modifyIORef' (envPollers env) (HM.delete d)
-        Nothing -> return ()
-    Nothing ->
-      threadDelay 100000
+  case pollers of
+    [] -> threadDelay 100000
+    _nonEmpty -> do
+      mc <- timeout 1000000 $ waitAnyCatch (snd <$> pollers)
+      case mc of
+        Just (a, r) -> do
+          let devIds = map fst $ List.filter ((== a) . snd) pollers
+          case r of
+            Left e -> putStrLn $ "Poller for " <> show devIds <> " threw exception " <> show e
+            Right v -> putStrLn $ "Poller for " <> show devIds <> " exited with result" <> show v
+          forM_ devIds $ \d -> modifyIORef' (envPollers env) (HM.delete d)
+        Nothing ->
+          threadDelay 100000
 
 sub :: Env -> IO ()
 sub env = do
@@ -92,7 +93,36 @@ sub env = do
       , ("tuya/device/+/spec", MQTT.subOptions)
       ]
       []
+  logger env mc
   MQTT.waitForClient mc
+
+logger :: Env -> MQTT.MQTTClient -> IO ()
+logger env mc = go
+ where
+  go = do
+    threadDelay 60000000
+    pollers <- readIORef (envPollers env)
+    ips <- readIORef (envIps env)
+    keys <- readIORef (envKeys env)
+    vers <- readIORef (envVers env)
+    specs <- readIORef (envSpecs env)
+    statusMap <- readIORef (envStatusMap env)
+    print $
+      "poll: "
+        ++ show (HM.size pollers)
+        ++ " pollers, "
+        ++ show (HM.size ips)
+        ++ " ips, "
+        ++ show (HM.size keys)
+        ++ " keys, "
+        ++ show (HM.size vers)
+        ++ " vers, "
+        ++ show (HM.size specs)
+        ++ " specs, "
+        ++ show (HM.size statusMap)
+        ++ " statusmap."
+    connected <- MQTT.isConnected mc
+    when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> LBS.ByteString -> [MQTT.Property] -> IO ()
 msgReceived env _mc topic payload _

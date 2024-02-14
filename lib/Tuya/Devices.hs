@@ -15,6 +15,7 @@ import Data.Text.Encoding
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
 
+import Control.Concurrent (threadDelay)
 import Tuya.Cloud
 import Tuya.Config
 import Tuya.Types
@@ -34,7 +35,27 @@ serve cfg = do
       MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg), MQTT._msgCB = MQTT.SimpleCallback (msgReceived env)}
       (mqttBrokerUri (cfgMqtt cfg))
   _ <- MQTT.subscribe mc [("tuya/device/+/discover", MQTT.subOptions), ("tuya/device/+/ip", MQTT.subOptions)] []
+  logger env mc
   MQTT.waitForClient mc
+
+logger :: Env -> MQTT.MQTTClient -> IO ()
+logger env mc = go
+ where
+  go = do
+    threadDelay 60000000
+    ips <- readIORef (envIps env)
+    keys <- readIORef (envKeys env)
+    vers <- readIORef (envVers env)
+    print $
+      "devices: "
+        ++ show (HM.size ips)
+        ++ " ips, "
+        ++ show (HM.size keys)
+        ++ " keys, "
+        ++ show (HM.size vers)
+        ++ " vers."
+    connected <- MQTT.isConnected mc
+    when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
 msgReceived env mc topic payload _
