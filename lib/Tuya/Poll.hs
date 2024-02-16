@@ -1,4 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -33,13 +36,18 @@ import Data.Text.Encoding
 import qualified Data.Text.IO as Text
 import Data.Time.Clock
 import Data.Time.Format
+import qualified Data.Vector as Vec
+import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
 import qualified Network.Socket as S
+import NoThunks.Class
 import System.Timeout
 
+import Control.DeepSeq
 import Tuya.Config
 import Tuya.Local
+import Tuya.Orphans ()
 import Tuya.Types
 
 data Env = Env
@@ -52,6 +60,8 @@ data Env = Env
   , envSpecs :: IORef (HashMap Text Specification)
   , envStatusMap :: IORef (HashMap Text (HashMap Text Text))
   }
+  deriving stock (Generic)
+  deriving (NoThunks) via AllowThunksIn '["envCfg", "envMc", "envPollers"] Env
 
 poller :: Config -> IO ()
 poller cfg = do
@@ -106,8 +116,8 @@ logger env mc = go
     keys <- readIORef (envKeys env)
     vers <- readIORef (envVers env)
     specs <- readIORef (envSpecs env)
-    statusMap <- readIORef (envStatusMap env)
-    print $
+    statusmap <- readIORef (envStatusMap env)
+    putStrLn $
       "poll: "
         ++ show (HM.size pollers)
         ++ " pollers, "
@@ -119,9 +129,13 @@ logger env mc = go
         ++ " vers, "
         ++ show (HM.size specs)
         ++ " specs, "
-        ++ show (HM.size statusMap)
+        ++ show (HM.size statusmap)
         ++ " statusmap."
     connected <- MQTT.isConnected mc
+    nt <- noThunks [] env
+    case nt of
+      Just ti -> putStrLn $ "poll no thunks: " ++ show ti
+      Nothing -> return ()
     when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> LBS.ByteString -> [MQTT.Property] -> IO ()
@@ -150,7 +164,7 @@ msgReceived env _mc topic payload _
         (LBS.toStrict payload)
         (envKeys env)
   | MQTT.match "tuya/device/+/spec" topic = do
-      let spec = either error dsSpecification $ eitherDecode payload
+      let spec = either error dsSpecification $ eitherDecodeDeep payload
       update
         (MQTT.unTopic $ MQTT.split topic !! 2)
         spec
@@ -161,13 +175,19 @@ msgReceived env _mc topic payload _
         (envStatusMap env)
   | otherwise = return ()
 
+eitherDecodeDeep :: (FromJSON b, NFData b) => LBS.ByteString -> Either String b
+eitherDecodeDeep str =
+  case eitherDecode' str of
+    Left err -> Left err
+    Right parsed -> parsed `deepseq` Right parsed
+
 update :: Text -> v -> IORef (HashMap Text v) -> IO ()
 update devId !val ref = modifyIORef' ref (HM.insert devId val)
 
 statusMap :: Specification -> HashMap Text Text
-statusMap spec = mconcat $ map go (specStatus spec)
+statusMap spec = HM.fromList $ map go (Vec.toList $ specStatus spec)
  where
-  go s = HM.singleton (Text.pack $ show $ statusDpId s) (statusCode s)
+  go s = (Text.pack $ show $ statusDpId s, statusCode s)
 
 ensurePoller :: Env -> Text -> IO ()
 ensurePoller env devId = do

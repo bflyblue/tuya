@@ -19,8 +19,8 @@ main = do
   hSetBuffering stderr LineBuffering
   args <- getArgs
   let configPath = case args of
-                    [] -> "tuya.yaml"
-                    (path:_) -> path
+        [] -> "tuya.yaml"
+        (path : _) -> path
   cfg <- readConfigFile configPath
   discover (cfgMqtt cfg)
     `concurrently_` serve cfg

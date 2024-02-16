@@ -27,6 +27,7 @@ import Data.Time.Format
 import Network.HTTP.Client (Request, method, path, queryString, requestHeaders)
 import Network.HTTP.Req
 
+import qualified Data.Vector as Vec
 import Tuya.Types
 
 newtype Cloud a = Cloud {unCloud :: ReaderT (HttpConfig, CloudAuth, Maybe ByteString) IO a}
@@ -223,8 +224,8 @@ getDeviceSpecification deviceid = do
   return
     Specification
       { specCategory = specCategory spec1
-      , specFunctions = zipWith stitchFunc (specFunctions spec1) (specFunctions spec2)
-      , specStatus = zipWith stitchStatus (specStatus spec1) (specStatus spec2)
+      , specFunctions = Vec.zipWith stitchFunc (specFunctions spec1) (specFunctions spec2)
+      , specStatus = Vec.zipWith stitchStatus (specStatus spec1) (specStatus spec2)
       }
  where
   stitchFunc f1 f2 =

@@ -1,8 +1,12 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Strict #-}
 
 module Tuya.Devices where
 
+import Control.Concurrent (threadDelay)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
@@ -12,12 +16,14 @@ import qualified Data.HashMap.Strict as HM
 import Data.IORef
 import Data.Text (Text)
 import Data.Text.Encoding
+import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
+import NoThunks.Class
 
-import Control.Concurrent (threadDelay)
 import Tuya.Cloud
 import Tuya.Config
+import Tuya.Orphans ()
 import Tuya.Types
 
 data Env = Env
@@ -26,6 +32,8 @@ data Env = Env
   , envKeys :: IORef (HashMap Text Text)
   , envVers :: IORef (HashMap Text Text)
   }
+  deriving stock (Generic)
+  deriving (NoThunks) via AllowThunksIn '["envCfg"] Env
 
 serve :: Config -> IO ()
 serve cfg = do
@@ -46,7 +54,7 @@ logger env mc = go
     ips <- readIORef (envIps env)
     keys <- readIORef (envKeys env)
     vers <- readIORef (envVers env)
-    print $
+    putStrLn $
       "devices: "
         ++ show (HM.size ips)
         ++ " ips, "
@@ -55,6 +63,10 @@ logger env mc = go
         ++ show (HM.size vers)
         ++ " vers."
     connected <- MQTT.isConnected mc
+    nt <- noThunks [] env
+    case nt of
+      Just ti -> putStrLn $ "device no thunks: " ++ show ti
+      Nothing -> return ()
     when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
