@@ -45,11 +45,6 @@ instance FromJSON TuyaSettings where
 
 {- Orphans -}
 
-instance FromJSON Network.URI where
-  parseJSON =
-    withText "URI" $
-      maybe (fail "Invalid URI") pure . parseURI . Text.unpack
-
 instance FromJSON MQTT.ProtocolLevel where
   parseJSON =
     withText "Protocol" $ \case
