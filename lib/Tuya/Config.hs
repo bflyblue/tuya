@@ -9,7 +9,6 @@ import Data.Aeson (FromJSON (..), Options (..), genericParseJSON)
 import Data.Aeson.Casing (aesonPrefix, snakeCase)
 import Data.Aeson.Types (withText)
 import Data.Text (Text)
-import qualified Data.Text as Text
 import qualified Data.Yaml as Yaml
 import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
