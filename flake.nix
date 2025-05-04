@@ -10,8 +10,15 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         hlib = pkgs.haskell.lib;
@@ -21,18 +28,21 @@
           };
 
         };
-        hls = pkgs.haskell-language-server.override { dynamic = true; };
         packageName = "tuya";
-      in {
-        packages.${packageName} =
-          haskellPackages.callCabal2nix packageName self { };
+      in
+      {
+        packages.${packageName} = haskellPackages.callCabal2nix packageName self { };
 
         packages.default = self.packages.${system}.${packageName};
 
         devShells.default = haskellPackages.shellFor {
           packages = p: [ self.packages.${system}.${packageName} ];
-          buildInputs = [ haskellPackages.cabal-install hls ];
+          buildInputs = with haskellPackages; [
+            cabal-install
+            haskell-language-server
+          ];
           withHoogle = true;
         };
-      });
+      }
+    );
 }
