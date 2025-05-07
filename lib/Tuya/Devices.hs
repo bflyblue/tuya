@@ -104,17 +104,18 @@ discoverDevice env mc devId payload = do
 
 getDeviceDetails :: Env -> MQTT.MQTTClient -> Text -> IO ()
 getDeviceDetails env mc devId = do
-  let tuya = cfgTuya (envCfg env)
-      cloudAuth = CloudAuth (encodeUtf8 $ tuyaClientId tuya) (encodeUtf8 $ tuyaClientSecret tuya) (tuyaAppUserId tuya)
-  runCloud cloudAuth $ do
-    devices <- getDevices [devId]
-    forM_ devices $ \dev -> do
-      keys <- liftIO $ readIORef (envKeys env)
-      case HM.lookup (deviceId dev) keys of
-        Just key
-          | key == deviceLocalKey dev -> newKey (deviceId dev) dev (deviceLocalKey dev)
-          | otherwise -> return ()
-        Nothing -> newKey (deviceId dev) dev (deviceLocalKey dev)
+  return ()
+  -- let tuya = cfgTuya (envCfg env)
+  --     cloudAuth = CloudAuth (encodeUtf8 $ tuyaClientId tuya) (encodeUtf8 $ tuyaClientSecret tuya) (tuyaAppUserId tuya)
+  -- runCloud cloudAuth $ do
+  --   devices <- getDevices [devId]
+  --   forM_ devices $ \dev -> do
+  --     keys <- liftIO $ readIORef (envKeys env)
+  --     case HM.lookup (deviceId dev) keys of
+  --       Just key
+  --         | key == deviceLocalKey dev -> newKey (deviceId dev) dev (deviceLocalKey dev)
+  --         | otherwise -> return ()
+  --       Nothing -> newKey (deviceId dev) dev (deviceLocalKey dev)
  where
   newKey devid device key = do
     liftIO $ modifyIORef' (envKeys env) (HM.insert devid key)

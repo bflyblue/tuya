@@ -110,7 +110,7 @@ sensor devId dev st =
     stopic = "tuya/device/" <> devId <> "/value/" <> statusCode st
     config =
       noNulls
-        [ "name" .= (deviceName dev <> " " <> statusName st)
+        [ "name" .= statusName st
         , "device"
             .= object
               [ "identifiers" .= deviceUuid dev
@@ -131,7 +131,7 @@ boolean devId dev st =
     stopic = "tuya/device/" <> devId <> "/value/" <> statusCode st
     config =
       noNulls
-        [ "name" .= (deviceName dev <> " " <> statusName st)
+        [ "name" .= statusName st
         , "device"
             .= object
               [ "identifiers" .= deviceUuid dev

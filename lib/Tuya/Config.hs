@@ -47,10 +47,12 @@ instance FromJSON TuyaSettings where
 
 {- Orphans -}
 
+{- Defined in newer aeson?
 instance FromJSON Network.URI where
   parseJSON =
     withText "URI" $
       maybe (fail "Invalid URI") pure . parseURI . Text.unpack
+-}
 
 instance FromJSON MQTT.ProtocolLevel where
   parseJSON =
