@@ -24,7 +24,7 @@ maintainer:    shaun.sharples@gmail.com
 library
   hs-source-dirs:   lib
   default-language: Haskell2010
-  ghc-options:      -Wall -O
+  ghc-options:      -Wall -O2
   build-depends:    base
   exposed-modules:
     Tuya.Cloud
@@ -35,6 +35,7 @@ library
     Tuya.Encode
     Tuya.HomeAssistant
     Tuya.Local
+    Tuya.Orphans
     Tuya.Poll
     Tuya.Types
 
@@ -50,6 +51,7 @@ library
     , cereal
     , containers
     , cryptonite
+    , deepseq
     , digest
     , http-client
     , http-client-tls
@@ -58,6 +60,7 @@ library
     , net-mqtt
     , network
     , network-uri
+    , nothunks
     , postgresql-simple
     , pqueue
     , req
@@ -67,13 +70,16 @@ library
     , time
     , transformers
     , unordered-containers
+    , vector
     , yaml
 
 executable tuya
   main-is:          Main.hs
   hs-source-dirs:   src
   default-language: Haskell2010
-  ghc-options:      -Wall -O -threaded
+  ghc-options:
+    -Wall -O2 -threaded -finfo-table-map -fdistinct-constructor-tables
+    -rtsopts "-with-rtsopts=-N4 -qg --disable-delayed-os-memory-return"
 
   -- other-modules:    
   build-depends:

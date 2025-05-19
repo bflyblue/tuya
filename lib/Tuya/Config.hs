@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Strict #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Tuya.Config where

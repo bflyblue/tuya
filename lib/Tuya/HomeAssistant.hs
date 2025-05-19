@@ -1,7 +1,12 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Strict #-}
 
 module Tuya.HomeAssistant where
 
+import Control.Concurrent (threadDelay)
 import Control.Monad
 import Data.Aeson
 import Data.ByteString.Lazy
@@ -9,18 +14,22 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
 import Data.Text
+import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
+import NoThunks.Class
 
--- import Data.Bits (testBit)
--- import Data.Scientific (floatingOrInteger)
-
+import Control.DeepSeq
+import qualified Data.ByteString.Lazy as LBS
 import Tuya.Config
+import Tuya.Orphans ()
 import Tuya.Types
 
 newtype Env = Env
   { envSpecs :: IORef (HashMap (Text, Text) Status)
   }
+  deriving stock (Generic)
+  deriving anyclass (NoThunks)
 
 homeAssist :: Config -> IO ()
 homeAssist cfg = do
@@ -36,7 +45,25 @@ homeAssist cfg = do
       , ("tuya/device/+/status/+", MQTT.subOptions)
       ]
       []
+  logger env mc
   MQTT.waitForClient mc
+
+logger :: Env -> MQTT.MQTTClient -> IO ()
+logger env mc = go
+ where
+  go = do
+    threadDelay 60000000
+    specs <- readIORef (envSpecs env)
+    putStrLn $
+      "homeassist: "
+        ++ show (HM.size specs)
+        ++ " specs."
+    connected <- MQTT.isConnected mc
+    nt <- noThunks [] env
+    case nt of
+      Just ti -> putStrLn $ "homeassist no thunks: " ++ show ti
+      Nothing -> return ()
+    when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
 msgReceived env mc topic payload _
@@ -51,10 +78,16 @@ msgReceived env mc topic payload _
        in status env mc devId code payload
   | otherwise = return ()
 
+eitherDecodeDeep :: (FromJSON b, NFData b) => LBS.ByteString -> Either String b
+eitherDecodeDeep str =
+  case eitherDecode' str of
+    Left err -> Left err
+    Right parsed -> parsed `deepseq` Right parsed
+
 specification :: Env -> MQTT.MQTTClient -> Text -> ByteString -> IO ()
 specification env mc devId payload = do
   let
-    Just devspec = decode' payload
+    Right devspec = eitherDecodeDeep payload
     dev = dsDevice devspec
     spec = dsSpecification devspec
 
@@ -77,7 +110,7 @@ sensor devId dev st =
     stopic = "tuya/device/" <> devId <> "/value/" <> statusCode st
     config =
       noNulls
-        [ "name" .= (deviceName dev <> " " <> statusName st)
+        [ "name" .= statusName st
         , "device"
             .= object
               [ "identifiers" .= deviceUuid dev
@@ -98,7 +131,7 @@ boolean devId dev st =
     stopic = "tuya/device/" <> devId <> "/value/" <> statusCode st
     config =
       noNulls
-        [ "name" .= (deviceName dev <> " " <> statusName st)
+        [ "name" .= statusName st
         , "device"
             .= object
               [ "identifiers" .= deviceUuid dev

@@ -1,7 +1,12 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Strict #-}
 
 module Tuya.Devices where
 
+import Control.Concurrent (threadDelay)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
@@ -11,11 +16,14 @@ import qualified Data.HashMap.Strict as HM
 import Data.IORef
 import Data.Text (Text)
 import Data.Text.Encoding
+import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
+import NoThunks.Class
 
 import Tuya.Cloud
 import Tuya.Config
+import Tuya.Orphans ()
 import Tuya.Types
 
 data Env = Env
@@ -24,6 +32,8 @@ data Env = Env
   , envKeys :: IORef (HashMap Text Text)
   , envVers :: IORef (HashMap Text Text)
   }
+  deriving stock (Generic)
+  deriving (NoThunks) via AllowThunksIn '["envCfg"] Env
 
 serve :: Config -> IO ()
 serve cfg = do
@@ -33,7 +43,31 @@ serve cfg = do
       MQTT.mqttConfig{MQTT._protocol = mqttProtocol (cfgMqtt cfg), MQTT._msgCB = MQTT.SimpleCallback (msgReceived env)}
       (mqttBrokerUri (cfgMqtt cfg))
   _ <- MQTT.subscribe mc [("tuya/device/+/discover", MQTT.subOptions), ("tuya/device/+/ip", MQTT.subOptions)] []
+  logger env mc
   MQTT.waitForClient mc
+
+logger :: Env -> MQTT.MQTTClient -> IO ()
+logger env mc = go
+ where
+  go = do
+    threadDelay 60000000
+    ips <- readIORef (envIps env)
+    keys <- readIORef (envKeys env)
+    vers <- readIORef (envVers env)
+    putStrLn $
+      "devices: "
+        ++ show (HM.size ips)
+        ++ " ips, "
+        ++ show (HM.size keys)
+        ++ " keys, "
+        ++ show (HM.size vers)
+        ++ " vers."
+    connected <- MQTT.isConnected mc
+    nt <- noThunks [] env
+    case nt of
+      Just ti -> putStrLn $ "device no thunks: " ++ show ti
+      Nothing -> return ()
+    when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
 msgReceived env mc topic payload _
@@ -70,17 +104,18 @@ discoverDevice env mc devId payload = do
 
 getDeviceDetails :: Env -> MQTT.MQTTClient -> Text -> IO ()
 getDeviceDetails env mc devId = do
-  let tuya = cfgTuya (envCfg env)
-      cloudAuth = CloudAuth (encodeUtf8 $ tuyaClientId tuya) (encodeUtf8 $ tuyaClientSecret tuya) (tuyaAppUserId tuya)
-  runCloud cloudAuth $ do
-    devices <- getDevices [devId]
-    forM_ devices $ \dev -> do
-      keys <- liftIO $ readIORef (envKeys env)
-      case HM.lookup (deviceId dev) keys of
-        Just key
-          | key == deviceLocalKey dev -> newKey (deviceId dev) dev (deviceLocalKey dev)
-          | otherwise -> return ()
-        Nothing -> newKey (deviceId dev) dev (deviceLocalKey dev)
+  return ()
+  -- let tuya = cfgTuya (envCfg env)
+  --     cloudAuth = CloudAuth (encodeUtf8 $ tuyaClientId tuya) (encodeUtf8 $ tuyaClientSecret tuya) (tuyaAppUserId tuya)
+  -- runCloud cloudAuth $ do
+  --   devices <- getDevices [devId]
+  --   forM_ devices $ \dev -> do
+  --     keys <- liftIO $ readIORef (envKeys env)
+  --     case HM.lookup (deviceId dev) keys of
+  --       Just key
+  --         | key == deviceLocalKey dev -> newKey (deviceId dev) dev (deviceLocalKey dev)
+  --         | otherwise -> return ()
+  --       Nothing -> newKey (deviceId dev) dev (deviceLocalKey dev)
  where
   newKey devid device key = do
     liftIO $ modifyIORef' (envKeys env) (HM.insert devid key)
