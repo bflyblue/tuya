@@ -262,8 +262,7 @@ pollDevice env devId = do
           case v of
             Left err -> error $ "recvMsg failed: " <> err
             Right msg -> do
-              -- deviceStatus env devId smap (msgPayload msg)
-              showStatus env devId smap (msgPayload msg)
+              deviceStatus env devId smap (msgPayload msg) -- showStatus env devId smap (msgPayload msg)
         Nothing -> Text.putStrLn $ devId <> " connect time out"
       threadDelay 10000000
     _ -> threadDelay 10000000
