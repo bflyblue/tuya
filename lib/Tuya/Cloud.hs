@@ -189,7 +189,10 @@ getDevices devs = do
             r' <- getDevice' tuyaUser (Just $ dlLastRowKey dl)
             return $ dlList dl ++ r'
           else return $ dlList dl
-      Nothing -> error $ "No result:\n" ++ show r
+      Nothing -> do
+        liftIO $ do
+          putStrLn $ "No result:\n" ++ show r
+          return []
 
 getDeviceSpecification1 :: Text -> Cloud Specification
 getDeviceSpecification1 deviceid = do
