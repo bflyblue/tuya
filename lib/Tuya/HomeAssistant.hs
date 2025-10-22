@@ -13,7 +13,7 @@ import Data.ByteString.Lazy
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
-import Data.Text
+import Data.Text hiding (show)
 import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT

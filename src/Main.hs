@@ -2,18 +2,27 @@
 
 module Main where
 
-import Control.Concurrent.Async (concurrently_)
-import Tuya.Config
-import Tuya.Devices (serve)
-import Tuya.Discover (discover)
-import Tuya.HomeAssistant (homeAssist)
-import Tuya.Poll (poller)
+import Control.Concurrent.Async
+import System.Environment
+import System.IO
 
-infixl 9 //
-(//) :: IO a -> IO b -> IO ()
-(//) = concurrently_
+import Tuya.Config
+import Tuya.Devices
+import Tuya.Discover
+import Tuya.HomeAssistant
+import Tuya.Poll
 
 main :: IO ()
 main = do
-  cfg <- readConfigFile "tuya.yaml"
-  discover (cfgMqtt cfg) // serve cfg // poller cfg // homeAssist cfg
+  hSetBuffering stdin LineBuffering
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
+  args <- getArgs
+  let configPath = case args of
+        [] -> "tuya.yaml"
+        (path : _) -> path
+  cfg <- readConfigFile configPath
+  discover (cfgMqtt cfg)
+    `concurrently_` serve cfg
+    `concurrently_` poller cfg
+    `concurrently_` homeAssist cfg
