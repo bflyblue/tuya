@@ -29,7 +29,6 @@
         pkgs.haskell.packages.ghc910.override {
           overrides = self: super: {
             net-mqtt = unmarkBroken (doJailbreak super.net-mqtt);
-            postgresql-libpq = doJailbreak super.postgresql-libpq;
             websockets = doJailbreak super.websockets;
           };
         };
