@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Tuya.Orphans where
 
 import Data.HashMap.Strict (HashMap)
