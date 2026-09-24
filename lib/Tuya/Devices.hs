@@ -114,8 +114,8 @@ getDeviceDetails env mc devId = do
       keys <- liftIO $ readIORef (envKeys env)
       case HM.lookup (deviceId dev) keys of
         Just key
-          | key == deviceLocalKey dev -> newKey (deviceId dev) dev (deviceLocalKey dev)
-          | otherwise -> return ()
+          | key == deviceLocalKey dev -> return ()
+          | otherwise -> newKey (deviceId dev) dev (deviceLocalKey dev)
         Nothing -> newKey (deviceId dev) dev (deviceLocalKey dev)
  where
   cloudError :: CloudError -> IO ()
@@ -123,9 +123,11 @@ getDeviceDetails env mc devId = do
   httpError :: HttpException -> IO ()
   httpError e = putStrLn $ "devices: cloud request for " <> show devId <> " failed: " <> show e
 
+  -- The key is recorded only once the spec is published, so a failed cloud
+  -- request is retried the next time the device's IP is announced.
   newKey devid device key = do
-    liftIO $ modifyIORef' (envKeys env) (HM.insert devid key)
     liftIO $ publishDevice mc devid ["key"] (fromStrict $ encodeUtf8 key) True
     spec <- getDeviceSpecification devid
     let devspec = DeviceSpecification device spec
     liftIO $ publishDevice mc devid ["spec"] (encode devspec) True
+    liftIO $ modifyIORef' (envKeys env) (HM.insert devid key)
