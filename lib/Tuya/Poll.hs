@@ -47,6 +47,7 @@ import System.Timeout
 import Control.DeepSeq
 import Tuya.Config
 import Tuya.Local
+import Tuya.Mqtt
 import Tuya.Orphans ()
 import Tuya.Types
 
@@ -147,41 +148,37 @@ logger env mc = go
     when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> LBS.ByteString -> [MQTT.Property] -> IO ()
-msgReceived env _mc topic payload _
-  | MQTT.match "tuya/device/+/discover" topic = do
-      let devId = MQTT.unTopic $ MQTT.split topic !! 2
+msgReceived env _mc topic payload _ =
+  case MQTT.unTopic <$> MQTT.split topic of
+    ["tuya", "device", devId, "discover"] ->
       ensurePoller env devId
-  | MQTT.match "tuya/device/+/ip" topic = do
-      let devId = MQTT.unTopic $ MQTT.split topic !! 2
+    ["tuya", "device", devId, "ip"] -> do
       update
         devId
-        (decodeUtf8 $ LBS.toStrict payload)
+        (decodeUtf8Lenient $ LBS.toStrict payload)
         (envIps env)
       cancelPoller env devId
-  | MQTT.match "tuya/device/+/version" topic = do
-      let devId = MQTT.unTopic $ MQTT.split topic !! 2
-      let mproto = case decodeUtf8 (LBS.toStrict payload) of
+    ["tuya", "device", devId, "version"] -> do
+      let mproto = case decodeUtf8Lenient (LBS.toStrict payload) of
             "3.3" -> Just Tuya33
             "3.4" -> Just Tuya34
             _ -> Nothing
       update devId mproto (envVers env)
       cancelPoller env devId
-  | MQTT.match "tuya/device/+/key" topic =
-      update
-        (MQTT.unTopic $ MQTT.split topic !! 2)
-        (LBS.toStrict payload)
-        (envKeys env)
-  | MQTT.match "tuya/device/+/spec" topic = do
-      let spec = either error dsSpecification $ eitherDecodeDeep payload
-      update
-        (MQTT.unTopic $ MQTT.split topic !! 2)
-        spec
-        (envSpecs env)
-      update
-        (MQTT.unTopic $ MQTT.split topic !! 2)
-        (statusMap spec)
-        (envStatusMap env)
-  | otherwise = return ()
+    ["tuya", "device", devId, "key"]
+      -- Local keys are AES-128 keys; anything else would fail in cipherInit.
+      | BS.length key == 16 -> update devId key (envKeys env)
+      | otherwise -> Text.putStrLn $ "poll: ignoring key of invalid length for " <> devId
+     where
+      key = LBS.toStrict payload
+    ["tuya", "device", devId, "spec"] ->
+      case eitherDecodeDeep payload of
+        Left err -> putStrLn $ "poll: ignoring spec for " <> show devId <> ": " <> err
+        Right devspec -> do
+          let spec = dsSpecification devspec
+          update devId spec (envSpecs env)
+          update devId (statusMap spec) (envStatusMap env)
+    _ -> return ()
 
 eitherDecodeDeep :: (FromJSON b, NFData b) => LBS.ByteString -> Either String b
 eitherDecodeDeep str =
@@ -233,41 +230,52 @@ pollDevice env devId = do
   maps <- readIORef (envStatusMap env)
   case (HM.lookup devId ips, HM.lookup devId vers, HM.lookup devId keys, HM.lookup devId maps) of
     (Just ip, Just (Just ver), Just key, Just smap) -> do
-      sockaddr <- sockAddrForIp ip
-      bracket (connect 1000000 sockaddr ver key) (traverse_ close) $ \case
-        Just c -> do
-          t <- getT'
-          v <- case ver of
-            Tuya33 -> do
-              sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
-              recvMsg @DeviceStatus 1000000 c
-            Tuya34 -> do
-              localKey <- getRandomBytes 16
-              sendCmdBS c SessKeyNegStart localKey
-              res <- recvBS 1000000 c
-              case res of
-                Left err -> error $ "recvBS failed: " <> err
-                Right res' -> do
-                  let
-                    (remoteKey, expectedHmac) = BS.splitAt 16 (msgPayload res')
-                    localHmac = convert $ hmacGetDigest $ sha256 key localKey
-                    remoteHmac = convert $ hmacGetDigest $ sha256 key remoteKey
-                  unless (localHmac == expectedHmac) $ fail "HMAC mismatch during session negotiation"
-                  sendCmdBS c SessKeyNegFinish remoteHmac
-                  let
-                    xored = xor localKey remoteKey
-                    sessionKey = ecbEncrypt (cipher key) xored
-                  sendCmd' sessionKey c DpQueryNew (GetDeviceStatus devId devId t devId)
-                  recvMsg' sessionKey 1000000 c
-          case v of
-            Left err -> error $ "recvMsg failed: " <> err
-            Right msg -> do
-              deviceStatus env devId smap (msgPayload msg) -- showStatus env devId smap (msgPayload msg)
-        Nothing -> Text.putStrLn $ devId <> " connect time out"
+      msockaddr <- sockAddrForIp ip
+      case msockaddr of
+        Nothing -> Text.putStrLn $ devId <> " has invalid IP address " <> ip
+        Just sockaddr ->
+          handle ioErr $
+            bracket (connect 1000000 sockaddr ver key) (traverse_ close) $ \case
+              Just c -> do
+                v <- queryStatus c ver key
+                case v of
+                  Left err -> Text.putStrLn $ devId <> " status query failed: " <> Text.pack err
+                  Right msg -> deviceStatus env devId smap (msgPayload msg) -- showStatus env devId smap (msgPayload msg)
+              Nothing -> Text.putStrLn $ devId <> " connect time out"
       threadDelay 10000000
     _ -> threadDelay 10000000
  where
   getT' = Text.pack . formatTime defaultTimeLocale "%s" <$> getCurrentTime
+
+  ioErr :: IOException -> IO ()
+  ioErr e = Text.putStrLn $ devId <> " connection failed: " <> Text.pack (show e)
+
+  queryStatus :: Client -> Protocol -> BS.ByteString -> IO (Either String (Msg DeviceStatus))
+  queryStatus c Tuya33 _ = do
+    t <- getT'
+    sendCmd c DpQuery (GetDeviceStatus devId devId t devId)
+    recvMsg 1000000 c
+  queryStatus c Tuya34 key = do
+    t <- getT'
+    localKey <- getRandomBytes 16
+    sendCmdBS c SessKeyNegStart localKey
+    res <- recvBS 1000000 c
+    case res of
+      Left err -> return $ Left ("session negotiation failed: " <> err)
+      Right res' -> do
+        let
+          (remoteKey, expectedHmac) = BS.splitAt 16 (msgPayload res')
+          localHmac = convert $ hmacGetDigest $ sha256 key localKey
+          remoteHmac = convert $ hmacGetDigest $ sha256 key remoteKey
+        if localHmac /= expectedHmac
+          then return $ Left "HMAC mismatch during session negotiation"
+          else do
+            sendCmdBS c SessKeyNegFinish remoteHmac
+            let
+              xored = xor localKey remoteKey
+              sessionKey = ecbEncrypt (cipher key) xored
+            sendCmd' sessionKey c DpQueryNew (GetDeviceStatus devId devId t devId)
+            recvMsg' sessionKey 1000000 c
 
 sha256 :: BS.ByteString -> BS.ByteString -> HMAC SHA256
 sha256 = hmac
@@ -337,8 +345,7 @@ showStatus _env devId smap status = do
   forM_ (KeyMap.toList (unDatapoints $ dsDps status)) $ \(dp, val) -> do
     case HM.lookup (Key.toText dp) smap of
       Just code -> do
-        let Just topic = MQTT.mkTopic ("tuya/device/" <> devId <> "/status/" <> code)
-        print (topic, val)
+        forM_ (deviceTopic devId ["status", code]) $ \topic -> print (topic, val)
       Nothing -> return ()
 
 deviceStatus :: Env -> Text -> HashMap Text Text -> DeviceStatus -> IO ()
@@ -346,12 +353,13 @@ deviceStatus env devId smap status = do
   forM_ (KeyMap.toList (unDatapoints $ dsDps status)) $ \(dp, val) -> do
     case HM.lookup (Key.toText dp) smap of
       Just code -> do
-        let Just topic = MQTT.mkTopic ("tuya/device/" <> devId <> "/status/" <> code)
-        MQTT.publish (envMc env) topic (encode val) True
+        publishDevice (envMc env) devId ["status", code] (encode val) True
       Nothing -> return ()
 
-sockAddrForIp :: Text -> IO S.SockAddr
+sockAddrForIp :: Text -> IO (Maybe S.SockAddr)
 sockAddrForIp ip = do
   let hints = S.defaultHints{S.addrFlags = [S.AI_NUMERICHOST], S.addrSocketType = S.Stream}
-  addr : _ <- S.getAddrInfo (Just hints) (Just $ Text.unpack ip) (Just "6668")
-  return (S.addrAddress addr)
+  r <- try @IOException $ S.getAddrInfo (Just hints) (Just $ Text.unpack ip) (Just "6668")
+  return $ case r of
+    Right (addr : _) -> Just (S.addrAddress addr)
+    _ -> Nothing

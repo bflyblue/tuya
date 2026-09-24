@@ -10,12 +10,12 @@ import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (fromStrict)
 import qualified Network.MQTT.Client as MQTT
-import qualified Network.MQTT.Topic as MQTT
 import qualified Network.Socket as Sock
 import qualified Network.Socket.ByteString as Sock
 
 import Tuya.Config
 import Tuya.Decode
+import Tuya.Mqtt
 import Tuya.Types
 
 discoverKey :: ByteString
@@ -30,10 +30,12 @@ discover mqttSettings = do
   s <- udpSocket 6667
   forever $ do
     (bs, _f) <- Sock.recvFrom s 65536
-    let m = either error id (decode Tuya33 discoverKey bs)
-        Just gw = Aeson.decodeStrict' (msgPayload m)
-        Just topic = MQTT.mkTopic ("tuya/device/" <> gwGwId gw <> "/discover")
-    MQTT.publish mc topic (fromStrict (msgPayload m)) False
+    case decode Tuya33 discoverKey bs of
+      Left err -> putStrLn $ "discover: ignoring packet: " <> err
+      Right m ->
+        case Aeson.eitherDecodeStrict' (msgPayload m) of
+          Left err -> putStrLn $ "discover: ignoring packet: " <> err
+          Right gw -> publishDevice mc (gwGwId gw) ["discover"] (fromStrict (msgPayload m)) False
 
 mqttClient :: MqttSettings -> IO MQTT.MQTTClient
 mqttClient settings =

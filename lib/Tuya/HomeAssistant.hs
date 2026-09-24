@@ -13,6 +13,7 @@ import Data.ByteString.Lazy
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
+import Data.Scientific (base10Exponent, coefficient, scientific)
 import Data.Text hiding (show)
 import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
@@ -22,6 +23,7 @@ import NoThunks.Class
 import Control.DeepSeq
 import qualified Data.ByteString.Lazy as LBS
 import Tuya.Config
+import Tuya.Mqtt
 import Tuya.Orphans ()
 import Tuya.Types
 
@@ -66,17 +68,11 @@ logger env mc = go
     when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
-msgReceived env mc topic payload _
-  | MQTT.match "tuya/device/+/spec" topic =
-      let ts = MQTT.split topic
-          devId = MQTT.unTopic (ts !! 2)
-       in specification env mc devId payload
-  | MQTT.match "tuya/device/+/status/+" topic =
-      let ts = MQTT.split topic
-          devId = MQTT.unTopic (ts !! 2)
-          code = MQTT.unTopic (ts !! 4)
-       in status env mc devId code payload
-  | otherwise = return ()
+msgReceived env mc topic payload _ =
+  case MQTT.unTopic <$> MQTT.split topic of
+    ["tuya", "device", devId, "spec"] -> specification env mc devId payload
+    ["tuya", "device", devId, "status", code] -> status env mc devId code payload
+    _ -> return ()
 
 eitherDecodeDeep :: (FromJSON b, NFData b) => LBS.ByteString -> Either String b
 eitherDecodeDeep str =
@@ -85,24 +81,25 @@ eitherDecodeDeep str =
     Right parsed -> parsed `deepseq` Right parsed
 
 specification :: Env -> MQTT.MQTTClient -> Text -> ByteString -> IO ()
-specification env mc devId payload = do
-  let
-    Right devspec = eitherDecodeDeep payload
-    dev = dsDevice devspec
-    spec = dsSpecification devspec
+specification env mc devId payload =
+  case eitherDecodeDeep payload of
+    Left err -> putStrLn $ "homeassist: ignoring spec for " <> show devId <> ": " <> err
+    Right devspec -> do
+      let
+        dev = dsDevice devspec
+        spec = dsSpecification devspec
 
-  forM_ (specStatus spec) $ \st -> do
-    modifyIORef' (envSpecs env) (HM.insert (devId, statusCode st) st)
-    let config (comp, cfg) = do
-          let Just topic = MQTT.mkTopic ("homeassistant/" <> comp <> "/" <> devId <> "_" <> statusCode st <> "/config")
-          MQTT.publish mc topic (encode cfg) True
+      forM_ (specStatus spec) $ \st -> do
+        modifyIORef' (envSpecs env) (HM.insert (devId, statusCode st) st)
+        let config (comp, cfg) =
+              publishLevels mc ["homeassistant", comp, devId <> "_" <> statusCode st, "config"] (encode cfg) True
 
-    case statusType st of
-      "Boolean" -> config (boolean devId dev st)
-      "String" -> config (sensor devId dev st)
-      "Enum" -> config (sensor devId dev st)
-      "Integer" -> config (sensor devId dev st)
-      _ -> return ()
+        case statusType st of
+          "Boolean" -> config (boolean devId dev st)
+          "String" -> config (sensor devId dev st)
+          "Enum" -> config (sensor devId dev st)
+          "Integer" -> config (sensor devId dev st)
+          _ -> return ()
 
 sensor :: Text -> Device -> Status -> (Text, Value)
 sensor devId dev st =
@@ -164,12 +161,12 @@ status env mc devId code payload = do
                     "Integer" -> scaled (valScale (statusValues st)) v
                     _ -> v
               Nothing -> payload
-      let Just topic = MQTT.mkTopic ("tuya/device/" <> devId <> "/value/" <> code)
-      MQTT.publish mc topic val True
+      publishDevice mc devId ["value", code] val True
     Nothing ->
       return ()
  where
-  scaled (Just s) (Number n) = Number $ n / (10 ^ s)
+  -- Shift the decimal exponent directly: exact, and total for negative scales.
+  scaled (Just s) (Number n) = Number $ scientific (coefficient n) (base10Exponent n - fromInteger s)
   scaled _ v = v
 
 {-

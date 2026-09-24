@@ -301,80 +301,82 @@ data CommandType
   | LanSetGwChannel
   deriving (Show, Eq, Ord, Generic, NoThunks, NFData)
 
-instance Enum CommandType where
-  fromEnum :: CommandType -> Int
-  fromEnum Udp = 0
-  fromEnum ApConfig = 1
-  fromEnum Active = 2
-  fromEnum SessKeyNegStart = 3
-  fromEnum SessKeyNegRes = 4
-  fromEnum SessKeyNegFinish = 5
-  fromEnum Unbind = 6
-  fromEnum Control = 7
-  fromEnum Status' = 8
-  fromEnum HeartBeat = 9
-  fromEnum DpQuery = 10
-  fromEnum QueryWifi = 100
-  fromEnum TokenBind = 12
-  fromEnum ControlNew = 13
-  fromEnum EnableWifi = 14
-  fromEnum DpQueryNew = 16
-  fromEnum SceneExecute = 17
-  fromEnum DpRefresh = 18
-  fromEnum UdpNew = 19
-  fromEnum ApConfigNew = 20
-  fromEnum BroadcastLpv34 = 35
-  fromEnum LanExtStream = 40
-  fromEnum LanGwActive = 240
-  fromEnum LanSubDevRequest = 241
-  fromEnum LanDeleteSubDev = 242
-  fromEnum LanReportSubDev = 243
-  fromEnum LanScene = 244
-  fromEnum LanPublishCloudConfig = 245
-  fromEnum LanPublicAppConfig = 246
-  fromEnum LanExportAppConfig = 247
-  fromEnum LanPublishScenePanel = 248
-  fromEnum LanRemoveGw = 249
-  fromEnum LanCheckGwUpdate = 250
-  fromEnum LanGwUpdate = 251
-  fromEnum LanSetGwChannel = 252
+-- | Wire value of a command. Values follow tinytuya's command_types.py.
+commandToWord :: CommandType -> Word32
+commandToWord Udp = 0
+commandToWord ApConfig = 1
+commandToWord Active = 2
+commandToWord SessKeyNegStart = 3
+commandToWord SessKeyNegRes = 4
+commandToWord SessKeyNegFinish = 5
+commandToWord Unbind = 6
+commandToWord Control = 7
+commandToWord Status' = 8
+commandToWord HeartBeat = 9
+commandToWord DpQuery = 10
+commandToWord QueryWifi = 11
+commandToWord TokenBind = 12
+commandToWord ControlNew = 13
+commandToWord EnableWifi = 14
+commandToWord DpQueryNew = 16
+commandToWord SceneExecute = 17
+commandToWord DpRefresh = 18
+commandToWord UdpNew = 19
+commandToWord ApConfigNew = 20
+commandToWord BroadcastLpv34 = 35
+commandToWord LanExtStream = 64
+commandToWord LanGwActive = 240
+commandToWord LanSubDevRequest = 241
+commandToWord LanDeleteSubDev = 242
+commandToWord LanReportSubDev = 243
+commandToWord LanScene = 244
+commandToWord LanPublishCloudConfig = 245
+commandToWord LanPublicAppConfig = 246
+commandToWord LanExportAppConfig = 247
+commandToWord LanPublishScenePanel = 248
+commandToWord LanRemoveGw = 249
+commandToWord LanCheckGwUpdate = 250
+commandToWord LanGwUpdate = 251
+commandToWord LanSetGwChannel = 252
 
-  toEnum :: Int -> CommandType
-  toEnum 0 = Udp
-  toEnum 1 = ApConfig
-  toEnum 2 = Active
-  toEnum 3 = SessKeyNegStart
-  toEnum 4 = SessKeyNegRes
-  toEnum 5 = SessKeyNegFinish
-  toEnum 6 = Unbind
-  toEnum 7 = Control
-  toEnum 8 = Status'
-  toEnum 9 = HeartBeat
-  toEnum 10 = DpQuery
-  toEnum 100 = QueryWifi
-  toEnum 12 = TokenBind
-  toEnum 13 = ControlNew
-  toEnum 14 = EnableWifi
-  toEnum 16 = DpQueryNew
-  toEnum 17 = SceneExecute
-  toEnum 18 = DpRefresh
-  toEnum 19 = UdpNew
-  toEnum 20 = ApConfigNew
-  toEnum 35 = BroadcastLpv34
-  toEnum 40 = LanExtStream
-  toEnum 240 = LanGwActive
-  toEnum 241 = LanSubDevRequest
-  toEnum 242 = LanDeleteSubDev
-  toEnum 243 = LanReportSubDev
-  toEnum 244 = LanScene
-  toEnum 245 = LanPublishCloudConfig
-  toEnum 246 = LanPublicAppConfig
-  toEnum 247 = LanExportAppConfig
-  toEnum 248 = LanPublishScenePanel
-  toEnum 249 = LanRemoveGw
-  toEnum 250 = LanCheckGwUpdate
-  toEnum 251 = LanGwUpdate
-  toEnum 252 = LanSetGwChannel
+-- | Decode a wire value, returning 'Nothing' for commands we don't know.
+commandFromWord :: Word32 -> Maybe CommandType
+commandFromWord 0 = Just Udp
+commandFromWord 1 = Just ApConfig
+commandFromWord 2 = Just Active
+commandFromWord 3 = Just SessKeyNegStart
+commandFromWord 4 = Just SessKeyNegRes
+commandFromWord 5 = Just SessKeyNegFinish
+commandFromWord 6 = Just Unbind
+commandFromWord 7 = Just Control
+commandFromWord 8 = Just Status'
+commandFromWord 9 = Just HeartBeat
+commandFromWord 10 = Just DpQuery
+commandFromWord 11 = Just QueryWifi
+commandFromWord 12 = Just TokenBind
+commandFromWord 13 = Just ControlNew
+commandFromWord 14 = Just EnableWifi
+commandFromWord 16 = Just DpQueryNew
+commandFromWord 17 = Just SceneExecute
+commandFromWord 18 = Just DpRefresh
+commandFromWord 19 = Just UdpNew
+commandFromWord 20 = Just ApConfigNew
+commandFromWord 35 = Just BroadcastLpv34
+commandFromWord 64 = Just LanExtStream
+commandFromWord 240 = Just LanGwActive
+commandFromWord 241 = Just LanSubDevRequest
+commandFromWord 242 = Just LanDeleteSubDev
+commandFromWord 243 = Just LanReportSubDev
+commandFromWord 244 = Just LanScene
+commandFromWord 245 = Just LanPublishCloudConfig
+commandFromWord 246 = Just LanPublicAppConfig
+commandFromWord 247 = Just LanExportAppConfig
+commandFromWord 248 = Just LanPublishScenePanel
+commandFromWord 249 = Just LanRemoveGw
+commandFromWord 250 = Just LanCheckGwUpdate
+commandFromWord 251 = Just LanGwUpdate
+commandFromWord 252 = Just LanSetGwChannel
+commandFromWord _ = Nothing
 
 noNulls :: [(Key, Value)] -> Value
 noNulls = object . filter ((/= Null) . snd)

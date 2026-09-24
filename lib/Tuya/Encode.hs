@@ -83,7 +83,7 @@ raw cmd seqno payload =
   Raw
     { rawPrefix = 0x55aa
     , rawSequence = seqno
-    , rawCommand = fromIntegral (fromEnum cmd)
+    , rawCommand = commandToWord cmd
     , rawPayloadSize = fromIntegral (BS.length payload)
     , rawReturnCode = 0
     , rawPayload = payload

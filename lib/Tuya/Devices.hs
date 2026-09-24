@@ -7,6 +7,7 @@
 module Tuya.Devices where
 
 import Control.Concurrent (threadDelay)
+import Control.Exception (handle)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
@@ -19,10 +20,12 @@ import Data.Text.Encoding
 import GHC.Generics (Generic)
 import qualified Network.MQTT.Client as MQTT
 import qualified Network.MQTT.Topic as MQTT
+import Network.HTTP.Req (HttpException)
 import NoThunks.Class
 
 import Tuya.Cloud
 import Tuya.Config
+import Tuya.Mqtt
 import Tuya.Orphans ()
 import Tuya.Types
 
@@ -70,10 +73,11 @@ logger env mc = go
     when connected go
 
 msgReceived :: Env -> MQTT.MQTTClient -> MQTT.Topic -> ByteString -> [MQTT.Property] -> IO ()
-msgReceived env mc topic payload _
-  | MQTT.match "tuya/device/+/discover" topic = discoverDevice env mc (MQTT.unTopic $ MQTT.split topic !! 2) payload
-  | MQTT.match "tuya/device/+/ip" topic = getDeviceDetails env mc (MQTT.unTopic $ MQTT.split topic !! 2)
-  | otherwise = return ()
+msgReceived env mc topic payload _ =
+  case MQTT.unTopic <$> MQTT.split topic of
+    ["tuya", "device", devId, "discover"] -> discoverDevice env mc devId payload
+    ["tuya", "device", devId, "ip"] -> getDeviceDetails env mc devId
+    _ -> return ()
 
 discoverDevice :: Env -> MQTT.MQTTClient -> Text -> ByteString -> IO ()
 discoverDevice env mc devId payload = do
@@ -94,19 +98,17 @@ discoverDevice env mc devId payload = do
     Nothing -> return ()
  where
   newIp devid ip = do
-    let Just topic = MQTT.mkTopic ("tuya/device/" <> devid <> "/ip")
-    MQTT.publish mc topic (fromStrict $ encodeUtf8 ip) True
+    publishDevice mc devid ["ip"] (fromStrict $ encodeUtf8 ip) True
     modifyIORef' (envIps env) (HM.insert devId ip)
   newVersion devid ver = do
-    let Just topic = MQTT.mkTopic ("tuya/device/" <> devid <> "/version")
-    MQTT.publish mc topic (fromStrict $ encodeUtf8 ver) True
+    publishDevice mc devid ["version"] (fromStrict $ encodeUtf8 ver) True
     modifyIORef' (envVers env) (HM.insert devId ver)
 
 getDeviceDetails :: Env -> MQTT.MQTTClient -> Text -> IO ()
 getDeviceDetails env mc devId = do
   let tuya = cfgTuya (envCfg env)
       cloudAuth = CloudAuth (encodeUtf8 $ tuyaClientId tuya) (encodeUtf8 $ tuyaClientSecret tuya) (tuyaAppUserId tuya)
-  runCloud cloudAuth $ do
+  handle cloudError . handle httpError . runCloud cloudAuth $ do
     devices <- getDevices [devId]
     forM_ devices $ \dev -> do
       keys <- liftIO $ readIORef (envKeys env)
@@ -116,11 +118,14 @@ getDeviceDetails env mc devId = do
           | otherwise -> return ()
         Nothing -> newKey (deviceId dev) dev (deviceLocalKey dev)
  where
+  cloudError :: CloudError -> IO ()
+  cloudError e = putStrLn $ "devices: cloud request for " <> show devId <> " failed: " <> show e
+  httpError :: HttpException -> IO ()
+  httpError e = putStrLn $ "devices: cloud request for " <> show devId <> " failed: " <> show e
+
   newKey devid device key = do
     liftIO $ modifyIORef' (envKeys env) (HM.insert devid key)
-    let Just keyTopic = MQTT.mkTopic ("tuya/device/" <> devid <> "/key")
-    liftIO $ MQTT.publish mc keyTopic (fromStrict $ encodeUtf8 key) True
+    liftIO $ publishDevice mc devid ["key"] (fromStrict $ encodeUtf8 key) True
     spec <- getDeviceSpecification devid
-    let Just specTopic = MQTT.mkTopic ("tuya/device/" <> devid <> "/spec")
-        devspec = DeviceSpecification device spec
-    liftIO $ MQTT.publish mc specTopic (encode devspec) True
+    let devspec = DeviceSpecification device spec
+    liftIO $ publishDevice mc devid ["spec"] (encode devspec) True

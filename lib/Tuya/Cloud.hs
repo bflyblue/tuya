@@ -5,7 +5,7 @@
 
 module Tuya.Cloud where
 
-import Control.Exception (throwIO)
+import Control.Exception (Exception, throwIO)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask, asks, runReaderT)
@@ -40,6 +40,15 @@ instance MonadHttp Cloud where
   handleHttpException :: HttpException -> Cloud a
   handleHttpException = Cloud . lift . throwIO
 
+-- | The API replied without a @result@ field; carries the shown response.
+newtype CloudError = NoResult String
+  deriving (Show)
+
+instance Exception CloudError
+
+noResult :: (Show r) => r -> Cloud a
+noResult r = liftIO $ throwIO $ NoResult (show r)
+
 data CloudAuth = CloudAuth
   { clientId :: ByteString
   , clientSecret :: ByteString
@@ -66,7 +75,7 @@ cloudAccessToken = do
   r <- reqCb GET (https "openapi.tuyaeu.com" /: "v1.0" /: "token") NoReqBody jsonResponse opts signReq
   case getResult $ responseBody r of
     Just tok -> return (tAccessToken tok)
-    Nothing -> error $ "No result:\n" ++ show r
+    Nothing -> noResult r
 
 sign :: ByteString -> ByteString -> Maybe ByteString -> ByteString -> ByteString -> ByteString -> ByteString
 sign key clientid accessToken t nonce s = hex $ convert $ hmacGetDigest $ sha256 key (clientid <> fromMaybe mempty accessToken <> t <> nonce <> s)
@@ -162,7 +171,7 @@ getDeviceList = do
             r' <- getDeviceList' tuyaUser (Just $ dlLastRowKey dl)
             return $ dlList dl ++ r'
           else return $ dlList dl
-      Nothing -> error $ "No result:\n" ++ show r
+      Nothing -> noResult r
 
 getDevices :: [Text] -> Cloud [Device]
 getDevices devs = do
@@ -205,7 +214,7 @@ getDeviceSpecification1 deviceid = do
 
   case getResult $ responseBody r of
     Just spec -> return spec
-    Nothing -> error $ "No result:\n" ++ show r
+    Nothing -> noResult r
 
 getDeviceSpecification2 :: Text -> Cloud Specification
 getDeviceSpecification2 deviceid = do
@@ -218,7 +227,7 @@ getDeviceSpecification2 deviceid = do
 
   case getResult $ responseBody r of
     Just spec -> return spec
-    Nothing -> error $ "No result:\n" ++ show r
+    Nothing -> noResult r
 
 getDeviceSpecification :: Text -> Cloud Specification
 getDeviceSpecification deviceid = do

@@ -35,6 +35,7 @@ library
     Tuya.Encode
     Tuya.HomeAssistant
     Tuya.Local
+    Tuya.Mqtt
     Tuya.Orphans
     Tuya.Poll
     Tuya.Types

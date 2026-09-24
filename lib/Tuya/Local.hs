@@ -3,6 +3,7 @@
 
 module Tuya.Local where
 
+import Control.Exception (onException)
 import Data.Aeson (FromJSON, ToJSON, eitherDecodeStrict')
 import Data.ByteString
 import Data.IORef
@@ -21,12 +22,13 @@ import Tuya.Types
 connect :: Int -> S.SockAddr -> Protocol -> ByteString -> IO (Maybe Client)
 connect wait sockaddr protocol key = do
   s <- S.socket S.AF_INET S.Stream S.defaultProtocol
-  mc <- timeout wait (S.connect s sockaddr)
+  mc <- timeout wait (S.connect s sockaddr) `onException` S.close s
   case mc of
     Just () -> do
       seqno <- newIORef 1
       return $ Just (Client s protocol key seqno)
-    Nothing ->
+    Nothing -> do
+      S.close s
       return Nothing
 
 close :: Client -> IO ()
